@@ -766,14 +766,14 @@ bench(-20,-17.6,true);bench(22,-17.6,true);bench(49,-6,true);
   });
 })();
 (function play(){
-  P(-42,47,18,15,'#e5cf9b',0.05);
+  P(-43.5,47,21,15,'#e5cf9b',0.05);
   B(-42,0.6,46,3,1.2,3,'#3e8e5a',{collide:true});
   [[-43.4,44.6],[-40.6,44.6],[-43.4,47.4],[-40.6,47.4]].forEach(function(p){cyl(p[0],2.0,p[1],0.07,0.07,3.6,'#e8663a',8);});
   B(-42,3.8,46,3.4,0.2,3.4,'#e8663a');
   B(-39.85,0.3,46,1.3,0.6,1.2,'#f2b632',{collide:true});
-  var bar=cyl(-47,2.5,52,0.07,0.07,5.2,'#4b5560',8);bar.rotation.z=Math.PI/2;
-  [[-49.4,51.2],[-49.4,52.8],[-44.6,51.2],[-44.6,52.8]].forEach(function(p){cyl(p[0],1.25,p[1],0.06,0.06,2.5,'#4b5560',8);circleCol(p[0],p[1],0.2,2.5);});
-  [-48.2,-45.8].forEach(function(x){
+  var bar=cyl(-49,2.5,52,0.07,0.07,9.2,'#4b5560',8);bar.rotation.z=Math.PI/2;
+  [-53.4,-49,-44.6].forEach(function(x){[51.2,52.8].forEach(function(z){cyl(x,1.25,z,0.06,0.06,2.5,'#4b5560',8);circleCol(x,z,0.2,2.5);});});
+  [-52.5,-51.2,-49.9,-48.1,-46.8,-45.5].forEach(function(x){
     var pv=new THREE.Group();pv.position.set(x,2.5,52);scene.add(pv);
     var rm=std('#333');
     [-0.28,0.28].forEach(function(dx){
@@ -781,7 +781,7 @@ bench(-20,-17.6,true);bench(22,-17.6,true);bench(49,-6,true);
     });
     var seat=new THREE.Mesh(new THREE.BoxGeometry(0.7,0.06,0.3),std('#e8663a'));
     seat.position.set(0,-2.0,0);seat.castShadow=true;pv.add(seat);
-    swings.push({pivot:pv,px:x,pz:52,pend:new Pend(2.0,17)});
+    swings.push({pivot:pv,px:x,pz:52,pend:new Pend(2.0,17),kid:null});
   });
 })();
 B(24,0.3,45,2,0.6,2,'#f2b632',{collide:true});
@@ -789,7 +789,7 @@ B(26,0.6,45,2,1.2,2,'#3e8e5a',{collide:true});
 B(28,0.9,45,2,1.8,2,'#2f6fb5',{collide:true});
 (function horizontalBars(){
   var x0=-37.5,x1=-34.5,cx=-36;
-  [{z:49.5,y:2.2},{z:52.8,y:2.45}].forEach(function(b){
+  [{z:46.0,y:2.2},{z:49.3,y:2.45}].forEach(function(b){   // far enough from the south fence for a flying dismount
     [x0,x1].forEach(function(px){
       cyl(px,(b.y+0.3)/2,b.z,0.06,0.06,b.y+0.3,'#4b5560',8);circleCol(px,b.z,0.1,b.y+0.3);
     });
@@ -1132,6 +1132,7 @@ var MOVES=[
   {n:'懸垂轉體',s:'轉體',d:1.8},{n:'翻上撐體',s:'撐體',d:3.0},{n:'大迴環',s:'大車輪',d:2.6},{n:'飛身下槓',s:'飛身',d:1.7}
 ];
 var mv=null,doneMoves={},flipP=-1;
+var BAR_SLOTS=[-0.85,0,0.85];
 function smooth(x){x=x<0?0:x>1?1:x;return x*x*(3-2*x);}
 var modeVel=new THREE.Vector3(),modePrev=new THREE.Vector3(),modePrevOK=false,tmpV=new THREE.Vector3();
 
@@ -1431,13 +1432,18 @@ function mount(kind,obj){
   if(kind==='swing'){char.root.position.set(0,-1.86,0);}
   else{
     obj.pend.th=0;obj.pend.w=0;obj.pivot.rotation.x=0;
-    char.root.position.set(clamp(P0.x,obj.x0+0.5,obj.x1-0.5)-obj.cx,-1.92,0);
+    obj.pOff=BAR_SLOTS.reduce(function(a,b){return Math.abs(b-(P0.x-obj.cx))<Math.abs(a-(P0.x-obj.cx))?b:a;});
+    char.root.position.set(obj.pOff,-1.92,0);
   }
+  assignSeats(kind,obj);
   actKey='';setAct(modeText(),kind==='swing'?'跳下':'放開');
   toast(kind==='swing'?'坐上鞦韆了':'抓住單槓了',1400);if(kind==='bar')SFX.clink();else SFX.blip();
 }
 function dismount(){
   if(mode==='free')return;
+  leftSeat.length=0;
+  followers.forEach(function(k){if(k.seat){if(k.seat.on)leftSeat.push(k);leaveSeat(k,true);}});
+  bars.forEach(function(b){b.pivot.rotation.x=0;});
   char.root.getWorldPosition(tmpV);
   var feetY=mode==='swing'?tmpV.y-0.85:tmpV.y;
   scene.add(char.root);
@@ -1462,9 +1468,16 @@ function updateModes(dt){
   var i,pumpIn=!!(keys.KeyW||keys.ArrowUp||jumpHeld||(joy.active&&joy.y<-0.45));
   for(i=0;i<swings.length;i++){
     var s=swings[i],occ=(mode==='swing'&&cur===s);
+    if(s.kid&&mode==='swing'&&!occ)continue;
     s.pend.step(dt,occ&&pumpIn,1.25,occ?0.1:0.5,3.6);
     if(occ&&s.pend.th*s.pivot.rotation.x<0&&Math.abs(s.pend.w)>1.1)SFX.whoosh(Math.abs(s.pend.w)/3.2);
     s.pivot.rotation.x=s.pend.th;
+  }
+  if(mode==='swing'){
+    for(i=0;i<swings.length;i++){
+      var s2=swings[i];if(!s2.kid||s2===cur)continue;
+      s2.pend.th=cur.pend.th+(s2.pend.th-cur.pend.th)*Math.exp(-dt*4);s2.pend.w=cur.pend.w;s2.pivot.rotation.x=s2.pend.th;   // offset fades, then in lockstep
+    }
   }
   if(state!=='play')return;
   if(mode==='coaster'){updateCoaster(dt);return;}
@@ -1490,6 +1503,7 @@ function updateModes(dt){
         markDone(9);mv=null;
         var comboEnd=combo.run&&combo.i>=combo.seq.length;
         dismount();if(comboEnd)comboCheer();P0.vz=Math.max(P0.vz,4.2);P0.vy=Math.max(P0.vy,4.6);P0.vx=0;flipP=0.0001;SFX.whoosh(1);
+        leftSeat.forEach(function(k){k.fvz=Math.max(k.fvz,4.2);k.fy=Math.max(k.fy,4.6);k.fvx=0;k.flip=0.0001;});
         return;
       }
       if(mv.t>=md.d){
@@ -1507,6 +1521,7 @@ function updateModes(dt){
       if(pullT>=1.2){pullT=-1;if(combo.run)comboNext();}
     }
   }
+  if(mode==='bar')for(i=0;i<bars.length;i++)if(bars[i]!==cur)bars[i].pivot.rotation.x=cur.pivot.rotation.x;
   cur.pivot.updateMatrixWorld(true);
   char.root.getWorldPosition(tmpV);
   if(modePrevOK)modeVel.copy(tmpV).sub(modePrev).multiplyScalar(1/Math.max(dt,0.001));
@@ -1519,12 +1534,7 @@ function poseMode(dt){
     w=cur.pend.w;
     var te=w<-0.15?1:(w>0.15?0:A.ext);
     A.ext+=(te-A.ext)*Math.min(1,dt*9);e=A.ext;
-    char.hips.position.set(0,0,0);
-    char.L.thigh.rotation.x=-1.4;char.R.thigh.rotation.x=-1.4;
-    char.L.shin.rotation.x=lerp(1.4,0.15,e);char.R.shin.rotation.x=lerp(1.4,0.15,e);
-    char.AL.sh.rotation.x=-2.75;char.AR.sh.rotation.x=-2.75;
-    char.AL.fo.rotation.x=-0.1;char.AR.fo.rotation.x=-0.1;
-    char.upper.rotation.x=0.05-0.22*e;
+    swingPose(char,e);
   }else{
     w=cur.pend.w;
     var kick=clamp(-w*0.2,-0.7,0.7);
@@ -1559,17 +1569,32 @@ function poseMode(dt){
           tL=lerp(0.05,-0.9,Math.sin(Math.PI*clamp(u/0.6,0,1)));sL=lerp(0.18,1.4,Math.sin(Math.PI*clamp(u/0.6,0,1)));break;
       }
     }
-    char.hips.position.set(0,hipY,0);
-    char.L.thigh.rotation.x=tL;char.R.thigh.rotation.x=tL;
-    char.L.shin.rotation.x=sL;char.R.shin.rotation.x=sL;
-    char.AL.sh.rotation.x=armX;char.AR.sh.rotation.x=(rArmX===null?armX:rArmX);
-    char.AL.sh.rotation.z=armZ;char.AR.sh.rotation.z=rArmZ;
-    char.AL.fo.rotation.x=0;char.AR.fo.rotation.x=0;
-    char.AL.sh.scale.y=armSc;char.AR.sh.scale.y=rArmSc;
-    char.upper.rotation.x=upr;
-    char.root.position.y=rootY;
-    char.root.rotation.x=rootRX;char.root.rotation.y=rootRY;
+    BP.tL=tL;BP.sL=sL;BP.armX=armX;BP.armZ=armZ;BP.armSc=armSc;BP.rArmX=(rArmX===null?armX:rArmX);BP.rArmZ=rArmZ;BP.rArmSc=rArmSc;
+    BP.upr=upr;BP.rootY=rootY;BP.rootRX=rootRX;BP.rootRY=rootRY;BP.hipY=hipY;
+    applyBarPose(char,BP,1);
   }
+}
+function swingPose(r,e){
+  r.hips.position.set(0,0,0);r.hips.rotation.x=0;
+  r.L.thigh.rotation.x=-1.4;r.R.thigh.rotation.x=-1.4;
+  r.L.shin.rotation.x=lerp(1.4,0.15,e);r.R.shin.rotation.x=lerp(1.4,0.15,e);
+  r.AL.sh.rotation.x=-2.75;r.AR.sh.rotation.x=-2.75;r.AL.sh.rotation.z=0;r.AR.sh.rotation.z=0;
+  r.AL.fo.rotation.x=-0.1;r.AR.fo.rotation.x=-0.1;
+  r.upper.rotation.x=0.05-0.22*e;
+}
+var BP={tL:0.05,sL:0.18,armX:-3,armZ:0,armSc:1,rArmX:-3,rArmZ:0,rArmSc:1,upr:0.04,rootY:-1.92,rootRX:0,rootRY:0,hipY:0.8};
+/* sc: the rig's scale, so a smaller classmate still has their hands on the bar */
+function applyBarPose(r,o,sc){
+  r.hips.position.set(0,o.hipY,0);r.hips.rotation.x=0;
+  r.L.thigh.rotation.x=o.tL;r.R.thigh.rotation.x=o.tL;
+  r.L.shin.rotation.x=o.sL;r.R.shin.rotation.x=o.sL;
+  r.AL.sh.rotation.x=o.armX;r.AR.sh.rotation.x=o.rArmX;
+  r.AL.sh.rotation.z=o.armZ;r.AR.sh.rotation.z=o.rArmZ;
+  r.AL.fo.rotation.x=0;r.AR.fo.rotation.x=0;
+  r.AL.sh.scale.y=o.armSc;r.AR.sh.scale.y=o.rArmSc;
+  r.upper.rotation.x=o.upr;
+  r.root.position.y=o.rootY*sc;
+  r.root.rotation.x=o.rootRX;r.root.rotation.y=o.rootRY;
 }
 
 /* ---------- character pose ---------- */
@@ -1939,24 +1964,24 @@ function railed(k){return k.kind==='jog'&&!k.follow&&!k.back;}
 function trailHead(){var p=trail[trail.length-1];return p?trailS+Math.hypot(P0.x-p.x,P0.z-p.z):0;}
 function recordTrail(){
   var p=trail[trail.length-1];
-  if(!p){trail.push({x:P0.x,z:P0.z,s:0,cr:P0.crouch});return;}
+  if(!p){trail.push({x:P0.x,z:P0.z,y:P0.y,s:0,cr:P0.crouch});return;}
   var d=Math.hypot(P0.x-p.x,P0.z-p.z);
-  if(d>=0.3){trailS+=d;trail.push({x:P0.x,z:P0.z,s:trailS,cr:P0.crouch});if(trail.length>500)trail.shift();}
+  if(d>=0.3){trailS+=d;trail.push({x:P0.x,z:P0.z,y:P0.y,s:trailS,cr:P0.crouch});if(trail.length>500)trail.shift();}
   while(jumpPts.length&&jumpPts[0].s<trailS-60)jumpPts.shift();
 }
-var tgtOut={x:0,z:0,cr:false};
+var tgtOut={x:0,z:0,y:0,cr:false};
 function trailAt(s){
   var n=trail.length,i;
-  if(!n){tgtOut.x=P0.x;tgtOut.z=P0.z;tgtOut.cr=false;return tgtOut;}
+  if(!n){tgtOut.x=P0.x;tgtOut.z=P0.z;tgtOut.y=P0.y;tgtOut.cr=false;return tgtOut;}
   var last=trail[n-1];
   if(s>=last.s){                         // between the newest breadcrumb and the player
     var d=Math.hypot(P0.x-last.x,P0.z-last.z),u=d>1e-6?clamp((s-last.s)/d,0,1):1;
-    tgtOut.x=last.x+(P0.x-last.x)*u;tgtOut.z=last.z+(P0.z-last.z)*u;tgtOut.cr=last.cr;return tgtOut;
+    tgtOut.x=last.x+(P0.x-last.x)*u;tgtOut.z=last.z+(P0.z-last.z)*u;tgtOut.y=last.y;tgtOut.cr=last.cr;return tgtOut;
   }
   for(i=n-1;i>0;i--)if(trail[i-1].s<=s)break;
-  if(i===0){tgtOut.x=trail[0].x;tgtOut.z=trail[0].z;tgtOut.cr=trail[0].cr;return tgtOut;}
+  if(i===0){tgtOut.x=trail[0].x;tgtOut.z=trail[0].z;tgtOut.y=trail[0].y;tgtOut.cr=trail[0].cr;return tgtOut;}
   var a=trail[i-1],b=trail[i],f=(s-a.s)/Math.max(1e-6,b.s-a.s);
-  tgtOut.x=a.x+(b.x-a.x)*f;tgtOut.z=a.z+(b.z-a.z)*f;tgtOut.cr=a.cr||b.cr;return tgtOut;
+  tgtOut.x=a.x+(b.x-a.x)*f;tgtOut.z=a.z+(b.z-a.z)*f;tgtOut.y=Math.min(a.y,b.y);tgtOut.cr=a.cr||b.cr;return tgtOut;
 }
 function onPlayerJump(){
   if(!followers.length)return;
@@ -2035,6 +2060,7 @@ function followStep(k,i,dt){
     k.sp=Math.hypot(k.fvx,k.fvz);
   }else{
     k.sp+=(want-k.sp)*Math.min(1,dt*(k.fg?10:3));
+    var ox=k.x,oz=k.z;
     if(d>0.02&&k.sp>0.01){
       var ux=dx/d,uz=dz/d,step=Math.min(d,k.sp*dt),ns=Math.max(1,Math.ceil(step/0.3)),ss=step/ns;
       for(var q=0;q<ns;q++){
@@ -2045,6 +2071,13 @@ function followStep(k,i,dt){
       if(k.sp>0.4)kidTurn(k,Math.atan2(ux,uz),dt);
     }
     if(k.sp<0.4||d<0.15)kidTurn(k,P0.heading,dt*0.6);   // idle: face the same way as the player
+    /* wedged behind a fence or post: pop back onto the path */
+    if(k.fg&&want>1.2&&d>1.5&&Math.hypot(k.x-ox,k.z-oz)<want*dt*0.25)k.stk=(k.stk||0)+dt;else k.stk=0;
+    if(k.stk>2.5){
+      popAt(k.x,k.y+0.9,k.z);
+      k.x=tx;k.z=tz;k.y=(k.seat&&k.seat.go)?groundAt(tx,tz,0.5):groundAt(tx,tz,tg.y+0.1);k.fg=true;k.fy=0;k.stk=0;
+      popAt(k.x,k.y+0.9,k.z);SFX.blip(true);
+    }
   }
   /* copy the player's jumps */
   if(k.jumpT>0){k.jumpT-=dt;if(k.jumpT<=0&&k.fg){k.fy=JUMP_V;k.fg=false;}}
@@ -2070,6 +2103,11 @@ function followStep(k,i,dt){
   }
   var crT=cr||(mode==='free'&&P0.crouch&&A.speed<0.6&&!k.seat);
   k.crA+=((crT?1:0)-k.crA)*Math.min(1,dt*10);
+  if(k.seat&&!k.seat.on){
+    k.seat.t+=dt;
+    if((d<0.6&&k.fg)||k.seat.t>10){k.x=tx;k.z=tz;sitDown(k);}
+    return;
+  }
 }
 function poseFollower(k,dt){
   var r=k.rig,sp=k.sp;
@@ -2083,10 +2121,73 @@ function poseFollower(k,dt){
   if(k.wave>0&&sp<0.5){r.AR.sh.rotation.x=-2.6;r.AR.sh.rotation.z=0.35+0.3*Math.sin(k.t*11);r.AR.fo.rotation.x=-0.2;}
   r.root.position.set(k.x,k.y,k.z);r.root.rotation.set(0,k.h,0);
 }
-/* equipment seats (swing / bar / coaster) are filled in by the copy-the-player code */
-function leaveSeat(k,jump){if(k.seat)k.seat=null;}
-function seatSync(k){}
-function poseSeated(k,dt){}
+/* equipment: when the player gets on a swing, bar or the coaster, each follower takes a spot next to them and copies them */
+var leftSeat=[],tmpW=new THREE.Vector3();
+function assignSeats(kind,obj){
+  var spots=[];
+  if(kind==='swing')swings.forEach(function(s){if(s!==obj)spots.push({kind:'swing',obj:s,off:0,d:Math.abs(s.px-obj.px)});});
+  else bars.forEach(function(b){BAR_SLOTS.forEach(function(off){
+    if(b===obj&&off===obj.pOff)return;
+    spots.push({kind:'bar',obj:b,off:off,d:(b===obj?0:10)+Math.abs(off-obj.pOff)});
+  });});
+  spots.sort(function(a,b){return a.d-b.d;});
+  followers.forEach(function(k,i){
+    var sp=spots[i];if(!sp)return;
+    var gx=sp.kind==='swing'?sp.obj.px:sp.obj.cx+sp.off,gz=sp.kind==='swing'?sp.obj.pz:sp.obj.z+0.6;   // reach a bar from the front, clear of its posts
+    k.seat={kind:sp.kind,obj:sp.obj,off:sp.off,on:false,go:{x:gx,z:gz},t:0};
+  });
+}
+function sitDown(k){
+  var st=k.seat,r=k.rig,sc=r.root.scale.y;
+  st.on=true;k.sp=0;k.crA=0;k.airA=0;k.flip=-1;k.ballistic=false;
+  r.root.rotation.set(0,0,0);r.hips.rotation.x=0;
+  if(st.kind==='swing'){st.obj.kid=k;st.obj.pivot.add(r.root);r.root.position.set(0,-1.97+0.11*sc,0);}
+  else if(st.kind==='bar'){st.obj.pivot.add(r.root);r.root.position.set(st.off,-1.92*sc,0);}
+  else{
+    var rd=train.riders[st.ri];rd.rig.root.visible=false;rd.sub=k;
+    train.cars[rd.car].add(r.root);r.root.position.set(rd.x,0.62,0.05);r.hips.position.set(0,0.1,0);
+    r.AL.sh.rotation.z=0;r.AR.sh.rotation.z=0;r.AL.sh.scale.y=1;r.AR.sh.scale.y=1;r.upper.rotation.x=0.05;
+  }
+  r.root.visible=true;k.vis=true;
+}
+function leaveSeat(k,jump){
+  var st=k.seat;if(!st)return;
+  k.seat=null;
+  if(!st.on)return;
+  var r=k.rig,sc=r.root.scale.y;
+  r.root.getWorldPosition(tmpW);
+  scene.add(r.root);
+  if(st.kind==='swing')st.obj.kid=null;
+  if(st.kind==='coaster'){var rd=train.riders[st.ri];rd.rig.root.visible=true;rd.sub=null;}
+  r.root.rotation.set(0,0,0);r.hips.rotation.x=0;r.AL.sh.scale.y=1;r.AR.sh.scale.y=1;r.AL.sh.rotation.z=0;r.AR.sh.rotation.z=0;
+  k.h=0;k.x=tmpW.x;k.z=tmpW.z;
+  var feet=st.kind==='swing'?tmpW.y-0.85*sc:tmpW.y;
+  k.y=Math.max(feet,groundAt(k.x,k.z,feet));k.fy=0;k.fvx=0;k.fvz=0;
+  if(jump&&st.kind!=='coaster'){
+    k.fvx=clamp(modeVel.x,-8,8);k.fvz=clamp(modeVel.z,-8,8);k.fy=clamp(modeVel.y,-6,8);
+    k.fg=false;k.ballistic=true;
+  }else k.fg=k.y<=groundAt(k.x,k.z,k.y)+0.02;
+}
+function seatSync(k){
+  k.rig.root.getWorldPosition(tmpW);
+  k.x=tmpW.x;k.y=tmpW.y;k.z=tmpW.z;k.sp=0;
+}
+function poseSeated(k,dt){
+  var st=k.seat,r=k.rig;
+  if(st.kind==='swing')swingPose(r,mode==='swing'?A.ext:0);
+  else if(st.kind==='bar'){applyBarPose(r,BP,r.root.scale.y);r.root.position.x=st.off;}
+  /* coaster riders are posed in updateRiders */
+}
+function boardFollowers(){
+  var n=0;
+  followers.forEach(function(k,i){
+    var rd=train.riders[i];if(!rd)return;
+    train.cars[rd.car].updateMatrixWorld(true);
+    tmpW.set(rd.x,0.62,0.05);train.cars[rd.car].localToWorld(tmpW);
+    k.seat={kind:'coaster',ri:i,on:false,go:{x:-33.0,z:tmpW.z},t:0};n++;
+  });
+  return n;
+}
 
 /* ---------- fireworks ---------- */
 var fireworks=[],FW_COLS=[0xff3b30,0xffb300,0x1e88ff,0x2ecc40,0xff2fb3,0x9b5cff];
@@ -2372,7 +2473,7 @@ var train={state:'idle',dist:0,v:0,dwell:0,cars:[],riders:[],view:0,hudT:0,playe
     var kd=randomKid(false);
     scene.remove(kd.root);train.cars[c2].add(kd.root);
     kd.root.position.set(sd*0.42,0.62,0.05);kd.hips.position.y=0.1;
-    train.riders.push({rig:kd,ph:rnd()*6});
+    train.riders.push({rig:kd,ph:rnd()*6,car:c2,x:sd*0.42,sub:null});
   });
   if(!train.playerCar)train.playerCar={car:0,x:-0.42};
 })();
@@ -2397,22 +2498,38 @@ function mountCoaster(){
   P0.vx=0;P0.vz=0;P0.vy=0;P0.crouch=false;touchCrouch=false;$('#bCrouch').classList.remove('on');jumpBuf=0;
   var c0=train.cars[0];c0.add(char.root);
   char.root.position.set(train.playerCar.x,0.62,0.05);char.root.rotation.set(0,0,0);
-  train.state='launch';train.dist=0;train.v=0;train.view=0;train.hudT=0;
-  actKey='';setAct('準備出發…請坐好!',isTouch?'換視角':null);
-  toast('發車!抓緊扶手 🎢',1800);
+  train.dist=0;train.v=0;train.view=0;train.hudT=0;train.boardT=0;
+  var nb=boardFollowers();
+  train.state=nb?'board':'launch';
+  actKey='';setAct(nb?'等跟班們上車…':'準備出發…請坐好!',isTouch?'換視角':null);
+  toast(nb?'等跟班們上車!':'發車!抓緊扶手 🎢',1800);
+  updateCrew();
 }
 function dismountCoaster(){
   if(mode!=='coaster')return;
   scene.add(char.root);char.root.visible=true;char.root.rotation.set(0,0,0);
   char.AL.sh.rotation.set(0,0,0);char.AR.sh.rotation.set(0,0,0);char.AL.sh.scale.set(1,1,1);char.AR.sh.scale.set(1,1,1);
   P0.x=-32.3;P0.z=clamp(carF.pz,10,22);P0.y=0.4;P0.vx=0;P0.vz=0;P0.vy=0;P0.onGround=true;P0.crouch=false;P0.heading=-Math.PI/2;
-  mode='free';train.state='idle';train.dist=0;placeTrain();
+  followers.forEach(function(k,i){
+    if(!k.seat||k.seat.kind!=='coaster')return;
+    var on=k.seat.on;leaveSeat(k,false);
+    k.x=-32.3;k.z=clamp(P0.z+(i+1)*1.2,8.5,27.5);k.y=0.4;k.fg=true;k.fy=0;k.h=Math.PI;
+    if(!on)k.y=groundAt(k.x,k.z,0.5);
+  });
+  mode='free';train.state='idle';train.dist=0;placeTrain();updateCrew();
   yaw=Math.PI/2;camera.up.set(0,1,0);camUp.set(0,1,0);
   actKey='';setAct(null,null);
 }
 function updateCoaster(dt){
   var tr=train;
-  if(tr.state==='launch'||tr.state==='ride'){
+  if(tr.state==='board'){
+    tr.boardT+=dt;
+    var wait=followers.filter(function(k){return k.seat&&k.seat.kind==='coaster'&&!k.seat.on;});
+    if(!wait.length||tr.boardT>7){
+      wait.forEach(function(k){k.x=k.seat.go.x;k.z=k.seat.go.z;sitDown(k);});
+      tr.state='launch';actKey='';setAct('準備出發…請坐好!',isTouch?'換視角':null);toast('全員上車,發車!🎢',1800);
+    }
+  }else if(tr.state==='launch'||tr.state==='ride'){
     var v=vAt(tr.dist+CT.iStop*CT.ds);
     var d0=tr.dist;
     tr.v=v;tr.dist+=v*dt;tr.state=tr.dist>8?'ride':'launch';
@@ -2427,7 +2544,8 @@ function updateCoaster(dt){
   tr.hudT-=dt;
   if(tr.hudT<=0){
     tr.hudT=0.12;actKey='';
-    if(tr.state==='dwell')setAct('已到站 · 按 F 下車',isTouch?'下車':null);
+    if(tr.state==='board')setAct('等跟班們上車…',isTouch?'換視角':null);
+    else if(tr.state==='dwell')setAct('已到站 · 按 F 下車',isTouch?'下車':null);
     else setAct('時速 '+Math.round(tr.v*3.6)+' 公里 · 高度 '+Math.round(carF.py)+' 公尺 · '+(isTouch?'按鈕換視角':'V 換視角'),isTouch?'換視角':null);
   }
 }
@@ -2448,7 +2566,7 @@ function poseCoaster(dt){
 function updateRiders(dt){
   var up=(train.state==='ride'&&train.v>9)?1:0;
   for(var i=0;i<train.riders.length;i++){
-    var r=train.riders[i].rig,p=train.riders[i].ph,t=tAll;
+    var rd=train.riders[i],r=rd.sub?rd.sub.rig:rd.rig,p=rd.ph,t=tAll;
     r.L.thigh.rotation.x=-1.5;r.R.thigh.rotation.x=-1.5;r.L.shin.rotation.x=1.5;r.R.shin.rotation.x=1.5;
     var sw=0.2*Math.sin(t*8+p);
     r.AL.sh.rotation.x=lerp(-1.0,-2.9+sw,up);r.AR.sh.rotation.x=lerp(-1.0,-2.9-sw,up);
@@ -2617,7 +2735,7 @@ function toast(msg,ms){
 var ZONES=[
   [-38,-29,5,33,'雲霄飛車站'],
   [46,64,-37,-10,'校門口'],[-1,11,-26,-17,'司令台'],[14,36,-48,-26,'圓頂大樓'],[-20,47,-48,-28,'教學大樓'],
-  [28,58,-30,-3,'東側廣場'],[-19,11,39,57,'籃球場'],[-53,-31,38,57,'遊戲場'],
+  [28,58,-30,-3,'東側廣場'],[-19,11,39,57,'籃球場'],[-55,-31,38,57,'遊戲場'],
   [21,32,41,49,'跳躍練習區'],[32,48,43,53,'矮棚架']
 ];
 var lastZone='';
@@ -2647,7 +2765,7 @@ function buildMap(){
   g.fillStyle='#c3b79e';path(TRK.hl,18,TRK.cz);g.fill();
   g.fillStyle='#4f9a5a';g.fillRect(mx(-24),mz(TRK.cz-17),48*MS,34*MS);
   g.fillStyle='#3b8c76';g.fillRect(mx(-18),mz(40),28*MS,15*MS);
-  g.fillStyle='#e5cf9b';g.fillRect(mx(-51),mz(39.5),18*MS,15*MS);
+  g.fillStyle='#e5cf9b';g.fillRect(mx(-54),mz(39.5),21*MS,15*MS);
   g.fillStyle='#b34a62';g.fillRect(mx(0),mz(-24),10*MS,5*MS);
   g.fillStyle='#12304a';
   boxes.forEach(function(b){
@@ -2761,7 +2879,7 @@ bCrouch.addEventListener('pointerdown',function(e){
 });
 var DBG=location.hash==="#debug";
 buildMoveBar();
-if(location.hash==='#debug')window.__g={nextCostume:nextCostume,startChat:startChat,chatChoose:chatChoose,get chatKid(){return chatKid;},CT:CT,train:train,mountCoaster:mountCoaster,kids:kids,soc:soc,P0:P0,bars:bars,mount:mount,startMove:startMove,get mode(){return mode;},get mv(){return mv;},char:char,doneMoves:doneMoves,SFX:SFX,swings:swings,A:A,dismount:dismount,actionPress:actionPress,get gear(){return gear;},followers:followers,recruit:recruit,dismissAll:dismissAll,trail:trail,combo:combo};
+if(location.hash==='#debug')window.__g={nextCostume:nextCostume,startChat:startChat,chatChoose:chatChoose,get chatKid(){return chatKid;},CT:CT,train:train,mountCoaster:mountCoaster,kids:kids,soc:soc,P0:P0,bars:bars,mount:mount,startMove:startMove,get mode(){return mode;},get mv(){return mv;},char:char,doneMoves:doneMoves,SFX:SFX,swings:swings,A:A,dismount:dismount,actionPress:actionPress,get gear(){return gear;},followers:followers,recruit:recruit,dismissAll:dismissAll,trail:trail,combo:combo,dismountCoaster:dismountCoaster,get BP(){return BP;}};
 if(DBG)window.__setYaw=function(v){yaw=v;};
 $('#bAct').addEventListener('pointerdown',function(e){e.preventDefault();actionPress();});
 $('#bDis').addEventListener('pointerdown',function(e){e.preventDefault();e.stopPropagation();dismissAll();});
