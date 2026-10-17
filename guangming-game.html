@@ -73,6 +73,7 @@ body{
 #touch{display:none}
 body.touch #touch{display:block}
 body.touch .keys{display:none}
+body.busy .keys{visibility:hidden}
 #joy{
   position:absolute;left:max(18px,env(safe-area-inset-left,0px));bottom:calc(22px + env(safe-area-inset-bottom,0px));
   width:132px;height:132px;border-radius:50%;
@@ -110,7 +111,7 @@ body.touch #chat{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
 #speedfx{position:absolute;inset:0;pointer-events:none;opacity:0;background:repeating-conic-gradient(from 0deg at 50% 50%,rgba(255,255,255,0) 0 3deg,rgba(255,255,255,.55) 3.4deg 3.8deg,rgba(255,255,255,0) 4.2deg 7deg);-webkit-mask-image:radial-gradient(circle at 50% 50%,transparent 38%,#000 95%);mask-image:radial-gradient(circle at 50% 50%,transparent 38%,#000 95%)}
 #moves{
   position:absolute;left:50%;bottom:calc(64px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
-  display:grid;grid-template-columns:repeat(5,54px);gap:6px;
+  display:grid;grid-template-columns:repeat(6,54px);gap:6px;
 }
 body.touch #moves{left:max(16px,env(safe-area-inset-left,0px));transform:none;bottom:calc(162px + env(safe-area-inset-bottom,0px))}
 .mvb{
@@ -121,6 +122,15 @@ body.touch #moves{left:max(16px,env(safe-area-inset-left,0px));transform:none;bo
 .mvb.done{background:var(--cap);color:var(--ink)}
 .mvb.done i{color:var(--ink)}
 .mvb:focus-visible{outline:3px solid var(--cap);outline-offset:2px}
+.mvb.cb{background:rgba(47,111,181,.9)}
+.mvb.cb i{color:#fff;opacity:.8}
+.mvb.dim{opacity:.45}
+#moves.editing .mvb:not(.cb){border-style:dashed;border-color:var(--cap)}
+#moves.editing #cbB{background:var(--cap);color:var(--ink)}
+#moves.editing #cbB i{color:var(--ink)}
+.mvb.pick{animation:pick .3s ease-out}
+@keyframes pick{0%{transform:scale(1.18)}100%{transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){.mvb.pick{animation:none}}
 .actchip{
   position:absolute;left:50%;bottom:calc(16px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
   font-weight:700;text-align:center;max-width:calc(100% - 32px);
@@ -220,6 +230,7 @@ body.touch .only-kb{display:none}
       <dt>蹲下</dt><dd>按住 <kbd>C</kbd> 或 <kbd>Ctrl</kbd></dd>
       <dt>視角</dt><dd>拖曳滑鼠、<kbd>Q</kbd><kbd>E</kbd>,滾輪調遠近</dd>
       <dt>互動</dt><dd>靠近鞦韆或單槓按 <kbd>F</kbd>;在單槓上按 <kbd>1</kbd>–<kbd>0</kbd> 做 10 種體操動作</dd>
+      <dt>連續動作</dt><dd>在單槓上按 <kbd>R</kbd> 編排,依序按數字加入,<kbd>Enter</kbd> 一口氣做完</dd>
     </dl>
     <dl class="how only-touch">
       <dt>走路</dt><dd>左下搖桿輕推</dd>
@@ -228,6 +239,7 @@ body.touch .only-kb{display:none}
       <dt>蹲下</dt><dd>「蹲下」按鈕,再按一次站起</dd>
       <dt>視角</dt><dd>在畫面空白處拖曳</dd>
       <dt>互動</dt><dd>靠近鞦韆或單槓時按「互動」鈕;在單槓上點下方 10 個動作按鈕</dd>
+      <dt>連續動作</dt><dd>在單槓上按「編排」,依序點動作,再按「開始」</dd>
     </dl>
     <button id="go" type="button" disabled>載入中…</button>
     <p class="note">大門、建築群、操場與司令台依照空拍圖與大門照片配置,尺寸為估算。籃球場、遊戲場、跳躍方塊與矮棚架不在照片中,位置是我加的。</p>
@@ -1272,33 +1284,94 @@ function setAct(text,btn){
 function doneCount(){var n=0,k;for(k in doneMoves)if(doneMoves[k])n++;return n;}
 function modeText(){
   if(mode==='swing')return isTouch?'按住「跳躍」盪高 · 按「跳下」離開':'按住 W 或空白鍵盪高 · 按 F 跳下來';
-  return (isTouch?'點下方按鈕做動作 · 搖桿上推擺盪':'數字鍵 1–0 做動作 · 按住 W 擺盪 · F 放開')+' · 已完成 '+doneCount()+'/10 種';
+  if(combo.edit)return '編排連續動作:'+(combo.seq.length?comboLabel():(isTouch?'依序點動作按鈕':'依序按 1–0'))+(isTouch?' · 按「開始」':' · Enter 開始 · ⌫ 刪除 · R 結束');
+  if(combo.run)return '連續動作 '+combo.i+'/'+combo.seq.length+':'+MOVES[combo.seq[combo.i-1]].n+(isTouch?'':' · Esc 停止');
+  return (isTouch?'點下方按鈕做動作 · 「編排」可排連續動作':'數字鍵 1–0 做動作 · R 編排連續動作 · 按住 W 擺盪 · F 放開')+' · 已完成 '+doneCount()+'/10 種';
 }
+function refreshAct(){actKey='';if(mode==='bar')setAct(modeText(),'放開');}
 function buildMoveBar(){
   var el=$('#moves'),i;
   for(i=0;i<MOVES.length;i++){
     (function(i){
       var b=document.createElement('button');
       b.type='button';b.className='mvb ctl';b.id='mv'+i;
+      b.style.gridRow=i<5?1:2;b.style.gridColumn=(i%5)+1;
       b.innerHTML='<i>'+((i+1)%10)+'</i>'+MOVES[i].s;
-      b.addEventListener('pointerdown',function(e){e.preventDefault();e.stopPropagation();startMove(i);});
+      b.addEventListener('pointerdown',function(e){e.preventDefault();e.stopPropagation();moveInput(i);});
       el.appendChild(b);
     })(i);
   }
+  ['cbA','cbB'].forEach(function(id,r){
+    var b=document.createElement('button');
+    b.type='button';b.className='mvb cb ctl';b.id=id;b.style.gridRow=r+1;b.style.gridColumn=6;
+    b.addEventListener('pointerdown',function(e){
+      e.preventDefault();e.stopPropagation();
+      if(id==='cbA'){if(combo.run)return;if(combo.edit)comboBack();else comboEdit(true);}
+      else{if(combo.run)comboStop();else comboPlay();}
+    });
+    el.appendChild(b);
+  });
+  refreshCombo();
 }
+
+/* bar combos: compose a sequence of moves, then play it back to back */
+var combo={edit:false,seq:[],run:false,i:0};
+function comboLabel(){return combo.seq.map(function(id){return MOVES[id].s;}).join('→');}
+function refreshCombo(){
+  var a=$('#cbA'),b=$('#cbB');if(!a)return;
+  $('#moves').classList.toggle('editing',combo.edit);
+  if(combo.edit){a.innerHTML='<i>⌫</i>刪除';b.innerHTML='<i>↵</i>開始';}
+  else if(combo.run){a.innerHTML='<i>R</i>編排';b.innerHTML='<i>Esc</i>停止';}
+  else{a.innerHTML='<i>R</i>編排';b.innerHTML='<i>↵</i>連續';}
+  a.classList.toggle('dim',combo.run);
+  b.classList.toggle('dim',!combo.edit&&!combo.run&&!combo.seq.length);
+  refreshAct();
+}
+function moveInput(id){if(combo.edit)comboAdd(id);else startMove(id);}
+function comboEdit(on){
+  if(mode!=='bar'||combo.run)return;
+  combo.edit=on;
+  if(on){combo.seq=[];toast(isTouch?'依序點動作,排好按「開始」':'依序按數字鍵加入動作,按 Enter 開始',1800);}
+  SFX.blip(on);refreshCombo();
+}
+function comboAdd(id){
+  if(combo.seq.length>=12){toast('最多 12 個動作喔',1200);return;}
+  if(combo.seq.length&&combo.seq[combo.seq.length-1]===9){toast('「飛身下槓」會離開單槓,要放在最後喔',1800);return;}
+  combo.seq.push(id);SFX.blip(true);
+  var b=$('#mv'+id);if(b){b.classList.remove('pick');void b.offsetWidth;b.classList.add('pick');}
+  refreshCombo();
+}
+function comboBack(){if(combo.seq.length)combo.seq.pop();else combo.edit=false;SFX.blip();refreshCombo();}
+function comboPlay(){
+  if(mode!=='bar'||combo.run||mv||pullT>=0)return;
+  if(!combo.seq.length){toast(isTouch?'先按「編排」把動作加進來':'先按 R 編排,再用數字鍵加入動作',1800);return;}
+  combo.edit=false;combo.run=true;combo.i=0;
+  toast('連續動作開始!共 '+combo.seq.length+' 個',1400);
+  comboNext();
+}
+function comboNext(){
+  if(!combo.run)return;
+  if(combo.i>=combo.seq.length){combo.run=false;comboCheer();refreshCombo();return;}
+  startMove(combo.seq[combo.i++],true);
+  refreshCombo();
+}
+function comboCheer(){toast('連續 '+combo.seq.length+' 個動作完成!太厲害了 🎉',2600);SFX.cheer();}
+function comboStop(){if(!combo.run)return;combo.run=false;toast('連續動作停止',1000);refreshCombo();}
+
 function markDone(id){
   if(!doneMoves[id]){
     doneMoves[id]=true;
     var b=$('#mv'+id);if(b)b.classList.add('done');
     var n=doneCount();
     if(n===10)toast('十個動作全部完成!你是體操小達人 🏅',3200);
-    else if(id!==0)toast(MOVES[id].n+' 完成!('+n+'/10)',1800);
-  }else if(id!==0)toast(MOVES[id].n+' 完成!',1400);
-  actKey='';if(mode==='bar')setAct(modeText(),'放開');
+    else if(id!==0&&!combo.run)toast(MOVES[id].n+' 完成!('+n+'/10)',1800);
+  }else if(id!==0&&!combo.run)toast(MOVES[id].n+' 完成!',1400);
+  refreshAct();
 }
-function startMove(id){
+function startMove(id,auto){
   if(mode!=='bar'||mv||pullT>=0||state!=='play')return;
-  if(id===0){pullT=0;return;}
+  if(combo.run&&!auto)return;
+  if(id===0){pullT=0;SFX.whoosh(0.3);return;}
   mv={id:id,t:0};
   toast(MOVES[id].n,1200);SFX.whoosh(0.6);
 }
@@ -1336,7 +1409,7 @@ function mount(kind,obj){
   mode=kind;cur=obj;near=null;gear=0;showGear();
   P0.vx=0;P0.vz=0;P0.vy=0;P0.crouch=false;touchCrouch=false;$('#bCrouch').classList.remove('on');
   pullT=-1;pullCount=0;jumpBuf=0;modePrevOK=false;P0.heading=0;mv=null;flipP=-1;
-  $('#moves').hidden=(kind!=='bar');
+  $('#moves').hidden=(kind!=='bar');combo.run=false;combo.edit=false;if(kind==='bar')refreshCombo();
   if(kind==='bar'){yaw=Math.PI/2+0.6;camDist=Math.max(camDist,6.5);}
   obj.pivot.add(char.root);
   char.root.rotation.set(0,0,0);
@@ -1358,7 +1431,7 @@ function dismount(){
   P0.y=Math.max(feetY,groundAt(P0.x,P0.z,feetY));
   P0.vx=clamp(modeVel.x,-8,8);P0.vz=clamp(modeVel.z,-8,8);P0.vy=clamp(modeVel.y,-6,8);
   P0.onGround=false;P0.crouch=false;P0.heading=0;
-  mode='free';cur=null;keys.KeyC=false;pullT=-1;mv=null;
+  mode='free';cur=null;keys.KeyC=false;pullT=-1;mv=null;combo.run=false;combo.edit=false;$('#moves').classList.remove('editing');
   char.root.rotation.x=0;char.AL.sh.rotation.z=0;char.AR.sh.rotation.z=0;
   $('#moves').hidden=true;
   actKey='';setAct(null,null);
@@ -1400,22 +1473,23 @@ function updateModes(dt){
       if(mv.id===9&&mu>=0.58){
         cur.pivot.updateMatrixWorld(true);
         markDone(9);mv=null;
-        dismount();P0.vz=Math.max(P0.vz,4.2);P0.vy=Math.max(P0.vy,4.6);P0.vx=0;flipP=0.0001;SFX.whoosh(1);
+        var comboEnd=combo.run&&combo.i>=combo.seq.length;
+        dismount();if(comboEnd)comboCheer();P0.vz=Math.max(P0.vz,4.2);P0.vy=Math.max(P0.vy,4.6);P0.vx=0;flipP=0.0001;SFX.whoosh(1);
         return;
       }
       if(mv.t>=md.d){
         markDone(mv.id);mv=null;cur.pend.th=0;cur.pend.w=0;cur.pivot.rotation.x=0;
-        actKey='';setAct(modeText(),'放開');
+        if(combo.run)comboNext();else refreshAct();
       }
     }else{
       cur.pend.step(dt,pumpW,1.1,0.2,3.2);
       cur.pivot.rotation.x=cur.pend.th;
     }
-    if(jumpBuf>0&&pullT<0&&!mv){startMove(0);jumpBuf=0;}
+    if(jumpBuf>0&&pullT<0&&!mv&&!combo.run&&!combo.edit){startMove(0);jumpBuf=0;}
     if(pullT>=0){
       var before=pullT;pullT+=dt;
-      if(before<0.6&&pullT>=0.6){pullCount++;markDone(0);toast('引體向上 第 '+pullCount+' 下',1400);actKey='';setAct(modeText(),'放開');}
-      if(pullT>=1.2)pullT=-1;
+      if(before<0.6&&pullT>=0.6){pullCount++;markDone(0);if(!combo.run)toast('引體向上 第 '+pullCount+' 下',1400);}
+      if(pullT>=1.2){pullT=-1;if(combo.run)comboNext();}
     }
   }
   cur.pivot.updateMatrixWorld(true);
@@ -2378,7 +2452,11 @@ window.addEventListener('keydown',function(e){
   if(e.code==='Space'){if(!e.repeat)jumpBuf=0.13;jumpHeld=true;e.preventDefault();}
   if(mode==='bar'&&!e.repeat){
     var dm=/^(Digit|Numpad)(\d)$/.exec(e.code);
-    if(dm){var dn=+dm[2];startMove(dn===0?9:dn-1);}
+    if(dm){var dn=+dm[2];moveInput(dn===0?9:dn-1);}
+    if(e.code==='KeyR')comboEdit(!combo.edit);
+    if(e.code==='Enter'||e.code==='NumpadEnter'){comboPlay();e.preventDefault();}
+    if(e.code==='Backspace'&&combo.edit){comboBack();e.preventDefault();}
+    if(e.code==='Escape'){if(combo.edit)comboEdit(false);else comboStop();}
   }
   if(e.code==='KeyF'&&!e.repeat)actionPress();
   if(e.code==='KeyC'&&!e.repeat&&(mode==='swing'||mode==='bar'))dismount();
@@ -2468,7 +2546,7 @@ goBtn.addEventListener('click',startGame);
 buildMap();
 camPos.set(Math.cos(introA)*115,48,Math.sin(introA)*85+8);camLook.set(0,2,8);
 
-var last=performance.now(),tAll=0,lastMap=0;
+var last=performance.now(),tAll=0,lastMap=0,bodyMode='free';
 function frame(now){
   requestAnimationFrame(frame);
   var dt=Math.min(DBG?0.12:0.033,(now-last)/1000);last=now;tAll+=dt;
@@ -2485,6 +2563,7 @@ function frame(now){
   dust.update(dt);
   clouds.forEach(function(c){c.position.x+=dt*1.2;if(c.position.x>260)c.position.x=-260;});
   ledUpdate(tAll);
+  if(mode!==bodyMode){bodyMode=mode;document.body.classList.toggle('busy',mode!=='free');}
   if(state==='play'){
     var zn=zoneName(P0.x,P0.z);
     if(zn!==lastZone){lastZone=zn;$('#zone').textContent=zn;}
