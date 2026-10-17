@@ -1,7 +1,7 @@
 # 光明國小 3D 探險遊戲 — 移轉 Claude Code 交接文件
 
 ## 專案
-- 單一 HTML 檔(`guangming-game.html`,約 2300 行):CSS + HUD 標記 + 一個內嵌 `<script>` IIFE。Three.js r128 UMD,CDN:`https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js`。字型 Noto Sans TC(Google Fonts)。
+- 單一 HTML 檔(`guangming-game.html`,約 2900 行):CSS + HUD 標記 + 一個內嵌 `<script>` IIFE。Three.js r128 UMD,CDN:`https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js`。字型 Noto Sans TC(Google Fonts)。
 - 已發佈為 Claude Artifact(Version 8):https://claude.ai/artifact/APeNs126FhVfC6iT8gMsvR 。到 Claude Code 後可直接以本地檔案開發,不必再走 Artifact。
 - 主題:新竹縣竹北市光明國小,原創、兒童安全、**不開車**的第三人稱自由探索。角色只能走/跑/跳/蹲。
 - 使用者慣用語言:繁體中文。
@@ -14,10 +14,11 @@
 - 10 顆光明星收集目標、小地圖(MS=1.7)、區域名稱 ZONES。
 
 ## 物理與控制(自製,無物理引擎)
-- AABB `boxes` + 圓 `circles`;`blocked/groundAt/ceilingAt/canStand`。WALK 3.0、RUN 6.4、跳躍頂點約 1.38 m、STEP 0.45。
-- 鍵盤:WASD 走、Shift 跑、Space 跳、C 蹲、F 互動、Q/E 轉視角、V 雲霄飛車換視角、⌘/Win 或 K 換裝。手機:搖桿 + 跳/蹲/互動/換裝按鈕。
+- AABB `boxes` + 圓 `circles`;`blocked/groundAt/ceilingAt/canStand`。WALK 3.0、跳躍頂點約 1.38 m、STEP 0.45。玩家移動每步 ≤0.3 m 分段檢查碰撞(高速防穿牆)。
+- 跑步四段變速 `GEARS=[3,7,9.5,12,15]`(`gear`、`updateGear`):按住 Shift/搖桿推到底,速度達該段 85% 持續 1.1 s 升一段;急轉彎(方向夾角 >~70°)或撞到東西掉段;放開 Shift 落地後歸零。
+- 鍵盤:WASD 走、Shift 跑(按住加速)、Space 跳、C 蹲、F 互動、Q/E 轉視角、V 雲霄飛車換視角、⌘/Win 或 K 換裝、M 音效開關、X 解散跟班;單槓上 1–0 動作、R 編排、Enter 連續播放、Backspace 刪除、Esc 停止。手機:搖桿 + 跳/蹲/互動/換裝/解散按鈕,單槓第 6 欄為「編排/開始」。
 - `mode`:`free | swing | bar | coaster`;另有 `chatKid`(對話中,mode 仍是 free)。
-- 每格順序:`updateModes → update → pose → updateKids → updateRiders → updateCamera → updateBubbles`。
+- 每格順序:`updateModes → update → pose → updateKids → updateRiders → updateCamera → updateBubbles`,之後 `dust.update`、`updateFireworks`。
 
 ## 已完成功能
 1. 3D 校園、星星收集、大門(依照片)、空拍重排。
@@ -27,7 +28,13 @@
 5. **雲霄飛車**(見下),站在操場西側 x≈−35。
 6. 對話與想法:靠近同學出現氣泡(DOM 池,最多 6 個,`updateBubbles`);F 開啟對話框(選項 1–5);對話中玩家凍結。
 7. 換裝 6 套(校服/體育服/太空人/小廚師/恐龍/超級英雄):`char.applyCostume`,改共用材質顏色並切換配件。
-8. 衝撞:Shift 跑步迎面撞到同學 → `kickKid`/`flyStep`/`poseFly`(飛行、落地、暈眩、起身),喜劇風格、無傷害描寫。
+8. 衝撞:Shift 跑步迎面撞到同學 → `kickKid`/`flyStep`/`poseFly`(飛行、落地、暈眩、起身),喜劇風格、無傷害描寫。力道隨速度增加。飛完後 `startReturn`:跑者走回跑道、聊天的走回原位(`hx/hz`),不再瞬移。
+9. **跑步四段變速**:HUD `#gear` 顯示段數;高速步幅加大、前傾,極速段手臂後擺;FOV 放大、速度線、腳下揚塵 `dust`。
+10. **單槓連續動作** `combo={edit,seq,run,i}`:`comboEdit/comboAdd/comboBack/comboPlay/comboNext`。動作結束(含引體向上 `pullT` 歸零)時接下一個;最多 12 個,「飛身下槓」只能放最後。
+11. **音效** `SFX`(Web Audio 即時合成,無音檔):腳步依地面 `surfaceAt`(草/沙/跑道/硬地)、跳/落地、換段、撞人(bonk + 滑哨)、落地暈眩、星星、鞦韆風聲、單槓、聊天、換裝、雲霄飛車鏈條 `clack`/煞車 `hiss`、持續風聲 `wind`(跑速/飛車速度)、煙火升空 `whistle` 與爆炸 `boom`。第一次點擊/按鍵才建立 AudioContext;分頁隱藏時暫停;開關存在 localStorage `gm-sound`。
+12. **跟班**(最多 `MAXF=5`):聊天選「一起玩吧」→ `recruit`。玩家路徑記成麵包屑 `trail`(每 0.3 m,含 y 與蹲下),第 i 位追 `trailAt(頭 − (i+1)×1.3 m)`;跑步跳在原地點 `jumpPts` 重現、原地跳依序跳 `jumpT`、蹲下同步。`followStep` 自帶重力/台階/天花板;卡住 2.5 s 會「咻」回路線上。踢球的同學加入時從 `soc.kids` 移出,解散後放回。轉身面對跟班才會出現聊天提示,選項 4 變成「解散」。
+13. **解散**(X、觸控「解散」、或對跟班說):朝鏡頭前方扇形飛出(`dismissAll`),到最高點時在飛行方向前上方炸煙火 `firework`(Points + 圓點貼圖),鏡頭 `camShow` 壓低約 3 秒看天空。雲霄飛車上不能解散。
+14. **跟班模仿器材**:玩家上鞦韆/單槓時 `assignSeats` 依距離分配其他座位,跟班走過去 `sitDown`(10 s 未到就直接就位)。鞦韆座位擺角以指數消除差距後與玩家同步;另一支單槓的 pivot 旋轉跟玩家那支一樣;姿勢用 `swingPose` / `applyBarPose(r,BP,scale)`(依身高縮放)。玩家跳下或飛身下槓時跟班一起(`leaveSeat(k,true)`,彈道 `ballistic`,飛身含空翻)。雲霄飛車:`mountCoaster` 先進 `board` 狀態等跟班走上月台、替換預設乘客 `train.riders[i].sub`(最多 7 s),下車時排在月台上。
 
 ## 雲霄飛車設計(重要)
 - `coaster-core.js` 的 `buildCoasterTrack(CR,cfg)`:純 JS,先在 2D 用直線與半圓組出蛇行路徑(6 條橫向直道、間距 10、轉彎半徑 5、x∈[−52,56]),再用 `CR` 五個彎道頂高度決定谷底曲線(谷深 `VH=40`、單丘飛越 hump),Y 做滑動平均,依 3D 弧長重取樣到 1 m。
@@ -44,21 +51,27 @@
 - 空翻/翻滾用 `hips.rotation.x`(繞髖關節),不要轉 root。玩家 `root.rotation.order='YXZ'`,NPC 預設 XYZ。
 - 側向傾斜 bank 由模擬速度算出:`atan2(v²κ, g)` 再平滑;不做垂直迴圈(姿態框架會翻轉)。
 - 所有碰撞為近似;樹為 InstancedMesh,不是碰撞物。
+- 鞦韆改為兩跨 6 個座位(x −52.5…−45.5,z 52),沙地加寬到 x −54;單槓移到 z 46.0 / 49.3(原 49.5 / 52.8 時從後槓飛身下槓會飛出南側圍牆),每支 3 個位置 `BAR_SLOTS=[−0.85,0,0.85]`,玩家吸附最近的位置。
+- 跟班上限 5 人 = 雲霄飛車可替換的乘客數 = 鞦韆/單槓空位數(扣掉玩家)。
+- 走跑姿勢共用 `walkPose`,改主角動作時跟班會一起變。
 
 ## 死路 / 踩過的坑
 - 大門位置與外觀曾兩次錯誤,最終以使用者照片重建;舊檔 `guangming-game.html`(南門版)已作廢。
 - 本機測試時 `[hidden]` 不生效(Artifact 骨架才提供 `[hidden]{display:none!important}`),測試需手動注入 CSS。
+- 煙火若在跟班身邊炸開會貼著鏡頭糊滿畫面;若放太高又因鏡頭俯角看不到。現行解法:沿飛行方向前方 9 m、高 7 m 炸開 + 解散時鏡頭短暫壓低。
+- 跟班走向單槓兩端位置時會被立柱卡住:位置內縮到 ±0.85,並從單槓前方 0.6 m 抓槓。
 - 無頭瀏覽器 FPS 極低,遊戲 dt 夾在 0.033 會讓時間變慢;`#debug` hash 會放寬到 0.12 並匯出 `window.__g` 供測試。**發佈前可保留,無害**。
 - 軌道谷底曾因 hump 不連續與 sm5 曲率集中造成 6–7 G,已改成 sin² 谷型 + 平滑 hump。
 - 把雲霄飛車路徑硬畫成逐點 Catmull-Rom 會尖角、曲率爆表,改為解析式直線+圓弧+Y 平滑。
 
 ## 測試方式(Claude Code 內可重現)
 - 語法:抽出最後一個 `<script>` 內容,`node --check`。
-- 執行:Playwright + `/opt/pw-browsers/chromium`,參數 `--use-gl=swiftshader --enable-unsafe-swiftshader --no-sandbox`;攔截 three.min.js 改走本機 `npm i three@0.128.0` 的檔案;開 `file://…/guangming-game.html#debug`,用 `window.__g`(P0、kids、train、CT、mountCoaster、startChat…)操作。
+- 執行:Playwright + `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`,參數 `--use-gl=swiftshader --enable-unsafe-swiftshader --no-sandbox --autoplay-policy=no-user-gesture-required`(手機版加 `isMobile/hasTouch`,viewport 844×390);攔截 three.min.js 改走本機 `npm i three@0.128.0` 的檔案;開 `file://…/guangming-game.html#debug`,用 `window.__g`(P0、kids、train、CT、mountCoaster、startChat、followers、recruit、dismissAll、combo、SFX、gear…)與 `window.__setYaw` 操作。無頭模式遊戲時間約為實際的 0.4 倍。
 - 軌道調校:node 載入 `coaster-core.js` 跑模擬,看 vmax、各彎速度、垂直/側向 G、車道間最小距離(≥10 m)。
 
 ## 尚未驗證 / 風險
-- 只在桌機模擬環境測過,**沒有真機與觸控測試**;手機效能(46 位同學 + 軌道 + 陰影)未量測。
+- 只在桌機模擬環境測過,**沒有真機與觸控測試**;手機效能(46 位同學 + 軌道 + 陰影 + 煙火)未量測。
+- 音效只驗證過會被呼叫、無錯誤,**沒有實際聽過**;音量平衡、iOS Safari(靜音鍵、需手勢解鎖)未確認。
 - 手機上換裝/聊天/飛車按鈕的版面未實機確認。
 - 角色姿勢是風格化的(單槓、坐姿、擠壓);相機穿牆、樹遮擋等細節未處理。
 - 司令台、圓頂大樓尺寸為估計值。
