@@ -50,6 +50,9 @@ body{
 .pips i{display:inline-block;width:11px;height:11px;border-radius:3px;background:rgba(18,48,74,.15);margin-left:3px;vertical-align:-1px}
 .pips i.on{background:var(--cap-deep)}
 .gear.max .pips i.on{background:#e8523f}
+.crew{font-weight:700;white-space:nowrap}
+.crew b{color:#e8523f;font-size:16px}
+.crew kbd{font-family:var(--font);font-weight:700;font-size:11px;background:#fff;border:1px solid var(--chip-line);border-bottom-width:2px;border-radius:6px;padding:1px 6px}
 #snd{font:700 12px var(--font);color:var(--ink);cursor:pointer;padding:5px 10px}
 #snd[aria-pressed="false"]{color:var(--ink-soft)}
 #map{
@@ -94,6 +97,7 @@ body.busy .keys{visibility:hidden}
 #bJump{right:max(22px,env(safe-area-inset-right,0px));bottom:calc(88px + env(safe-area-inset-bottom,0px))}
 #bCrouch{right:max(104px,calc(env(safe-area-inset-right,0px) + 84px));bottom:calc(30px + env(safe-area-inset-bottom,0px))}
 #bAct{right:max(22px,env(safe-area-inset-right,0px));bottom:calc(172px + env(safe-area-inset-bottom,0px));background:var(--cap);color:var(--ink)}
+#bDis{right:max(104px,calc(env(safe-area-inset-right,0px) + 84px));bottom:calc(112px + env(safe-area-inset-bottom,0px));background:#e8523f}
 #bubbles{position:absolute;inset:0;pointer-events:none;overflow:hidden}
 .bub{position:absolute;left:0;top:0;max-width:176px;background:#fff;color:var(--ink);border:2px solid var(--ink);border-radius:14px;padding:5px 9px;font:700 12.5px/1.35 var(--font);box-shadow:0 2px 8px rgba(18,48,74,.25);will-change:transform}
 .bub::after{content:"";position:absolute;left:50%;bottom:-8px;width:10px;height:10px;background:#fff;border-right:2px solid var(--ink);border-bottom:2px solid var(--ink);transform:translateX(-50%) rotate(45deg)}
@@ -189,6 +193,7 @@ body.touch .only-kb{display:none}
       <div class="chip stars"><span class="s">★</span><b id="sc">0</b><span>/ <span id="st">10</span> 顆光明星</span></div>
       <div class="chip" id="zone">校門口</div>
       <div class="chip gear" id="gear" hidden><b id="gearN">跑步</b><span class="pips"><i></i><i></i><i></i><i></i></span></div>
+      <div class="chip crew" id="crew" hidden></div>
     </div>
     <div class="col right">
       <canvas id="map" width="240" height="200" aria-label="校園小地圖"></canvas>
@@ -216,6 +221,7 @@ body.touch .only-kb{display:none}
   <button id="bSuit" class="btn ctl" type="button">換裝</button>
   <button id="bJump" class="btn ctl" type="button">跳躍</button>
   <button id="bAct" class="btn ctl" type="button" hidden>互動</button>
+  <button id="bDis" class="btn ctl" type="button" hidden>解散</button>
 </div>
 
 <div id="intro">
@@ -231,6 +237,7 @@ body.touch .only-kb{display:none}
       <dt>視角</dt><dd>拖曳滑鼠、<kbd>Q</kbd><kbd>E</kbd>,滾輪調遠近</dd>
       <dt>互動</dt><dd>靠近鞦韆或單槓按 <kbd>F</kbd>;在單槓上按 <kbd>1</kbd>–<kbd>0</kbd> 做 10 種體操動作</dd>
       <dt>連續動作</dt><dd>在單槓上按 <kbd>R</kbd> 編排,依序按數字加入,<kbd>Enter</kbd> 一口氣做完</dd>
+      <dt>找跟班</dt><dd>跟同學聊天選「一起玩吧」,他就會跟著你;按 <kbd>X</kbd> 解散</dd>
     </dl>
     <dl class="how only-touch">
       <dt>走路</dt><dd>左下搖桿輕推</dd>
@@ -240,6 +247,7 @@ body.touch .only-kb{display:none}
       <dt>視角</dt><dd>在畫面空白處拖曳</dd>
       <dt>互動</dt><dd>靠近鞦韆或單槓時按「互動」鈕;在單槓上點下方 10 個動作按鈕</dd>
       <dt>連續動作</dt><dd>在單槓上按「編排」,依序點動作,再按「開始」</dd>
+      <dt>找跟班</dt><dd>跟同學聊天選「一起玩吧」,他就會跟著你;按「解散」讓大家散開</dd>
     </dl>
     <button id="go" type="button" disabled>載入中…</button>
     <p class="note">大門、建築群、操場與司令台依照空拍圖與大門照片配置,尺寸為估算。籃球場、遊戲場、跳躍方塊與矮棚架不在照片中,位置是我加的。</p>
@@ -1234,7 +1242,7 @@ function update(dt){
   P0.x=clamp(P0.x,-BX,BX);P0.z=clamp(P0.z,-BZ,BZ);
 
   jumpBuf-=dt;
-  if(jumpBuf>0&&P0.onGround&&!P0.crouch){P0.vy=JUMP_V;P0.onGround=false;jumpBuf=0;SFX.jump();}
+  if(jumpBuf>0&&P0.onGround&&!P0.crouch){onPlayerJump();P0.vy=JUMP_V;P0.onGround=false;jumpBuf=0;SFX.jump();}
 
   var gh=groundAt(P0.x,P0.z,P0.y);
   if(P0.onGround){
@@ -1250,6 +1258,7 @@ function update(dt){
   }
 
   A.speed=Math.hypot(P0.vx,P0.vz);
+  recordTrail();
 
   var cy=P0.y+(P0.crouch?0.6:0.9);
   STARS.forEach(function(s){
@@ -1394,7 +1403,13 @@ function findNear(){
   if(!best&&P0.onGround&&train.state==='idle'&&P0.y<1&&P0.x>-35.2&&P0.x<-29.5&&P0.z>8.5&&P0.z<25)best={kind:'coaster',obj:null};
   if(!best&&P0.onGround&&!chatKid){
     var bk=null,bkd=4.4;
-    for(i=0;i<kids.length;i++){var kk=kids[i];if(kk.fly)continue;var dd=(kk.x-P0.x)*(kk.x-P0.x)+(kk.z-P0.z)*(kk.z-P0.z);if(dd<bkd&&Math.abs(kk.y-P0.y)<1.2){bkd=dd;bk=kk;}}
+    var hx=Math.sin(P0.heading),hz=Math.cos(P0.heading);
+    for(i=0;i<kids.length;i++){
+      var kk=kids[i];if(kk.fly||onSeat(kk))continue;
+      var ox=kk.x-P0.x,oz=kk.z-P0.z,dd=ox*ox+oz*oz;
+      if(kk.follow&&ox*hx+oz*hz<0.5*Math.sqrt(dd))continue;   // followers trail behind: only when you turn to face them
+      if(dd<bkd&&Math.abs(kk.y-P0.y)<1.2){bkd=dd;bk=kk;}
+    }
     if(bk)best={kind:'kid',obj:bk};
   }
   near=best;
@@ -1577,9 +1592,18 @@ function pose(dt){
       if(sp>8.5)dust.puff(P0.x-P0.vx*0.03,P0.y,P0.z-P0.vz*0.03,0.6+A.sprint*0.6);
     }
   }
-  var p=A.phase,move=Math.min(1,sp/1.2),c=A.crouch,ak=A.air;
-  var amp=lerp(0.5,0.95,A.run)*move*(1-0.65*c)*(1+0.25*A.sprint);
-  var kAmp=(lerp(0.6,1.6,A.run)+0.5*A.sprint)*move*(1-0.5*c);
+  if(flipP>0){
+    if(P0.onGround&&flipP>0.2)flipP=-1;else{flipP+=dt/0.75;if(flipP>=1)flipP=-1;}
+  }
+  walkPose(char,A.phase,sp,A.run,A.sprint,A.crouch,A.air,flipP,0);
+  char.root.position.set(P0.x,P0.y,P0.z);
+  char.root.rotation.y=P0.heading;
+}
+/* walk / run / crouch / jump / flip pose shared by the player and the classmates who copy them */
+function walkPose(r,p,sp,run,spr,c,ak,flip,hop){
+  var move=Math.min(1,sp/1.2);
+  var amp=lerp(0.5,0.95,run)*move*(1-0.65*c)*(1+0.25*spr);
+  var kAmp=(lerp(0.6,1.6,run)+0.5*spr)*move*(1-0.5*c);
   var tl=-Math.sin(p)*amp,trr=Math.sin(p)*amp;
   var sl=Math.max(0,Math.cos(p))*kAmp,sr=Math.max(0,-Math.cos(p))*kAmp;
   var al=Math.sin(p)*amp*1.05,ar=-Math.sin(p)*amp*1.05;
@@ -1587,27 +1611,22 @@ function pose(dt){
   tl=lerp(tl,-0.8,ak);trr=lerp(trr,0.25,ak);
   sl=lerp(sl,1.1,ak);sr=lerp(sr,0.7,ak);
   al=lerp(al,-2.3,ak);ar=lerp(ar,-2.0,ak);
-  var elbow=(0.25+0.9*A.run)*move+0.25*ak+0.15;
+  var elbow=(0.25+0.9*run)*move+0.25*ak+0.15;
   var nj=clamp((sp-12.5)/2,0,1)*(1-ak)*(1-c);            // top gear: arms swept back
   al=lerp(al,1.25,nj);ar=lerp(ar,1.25,nj);elbow=lerp(elbow,0.05,nj);
-  if(flipP>0){
-    if(P0.onGround&&flipP>0.2)flipP=-1;else{flipP+=dt/0.75;if(flipP>=1)flipP=-1;}
-  }
-  if(flipP>0){
-    var tk=Math.sin(Math.PI*flipP);
+  if(flip>0){
+    var tk=Math.sin(Math.PI*flip);
     tl=lerp(tl,-1.9,tk);trr=lerp(trr,-1.9,tk);sl=lerp(sl,2.1,tk);sr=lerp(sr,2.1,tk);al=lerp(al,-1.2,tk);ar=lerp(ar,-1.2,tk);
-    char.hips.rotation.x=2*Math.PI*smooth(flipP);
-  }else char.hips.rotation.x=0;
-  char.L.thigh.rotation.x=tl;char.R.thigh.rotation.x=trr;
-  char.L.shin.rotation.x=sl;char.R.shin.rotation.x=sr;
-  char.AL.sh.rotation.x=al;char.AR.sh.rotation.x=ar;
-  char.AL.fo.rotation.x=-elbow;char.AR.fo.rotation.x=-elbow;
-  var dip=0.05*move*(1+A.run)*(1-c)*(1-ak);
-  char.hips.position.y=lerp(0.8,0.488,c)-dip+0.03*Math.abs(Math.sin(p))*move*(1-c)*(1-ak);
-  char.hips.position.z=-0.3*c;
-  char.upper.rotation.x=0.28*A.run*move+0.32*A.sprint*move+0.18*nj+0.5*c+0.08*ak;
-  char.root.position.set(P0.x,P0.y,P0.z);
-  char.root.rotation.y=P0.heading;
+    r.hips.rotation.x=2*Math.PI*smooth(flip);
+  }else r.hips.rotation.x=0;
+  r.L.thigh.rotation.x=tl;r.R.thigh.rotation.x=trr;
+  r.L.shin.rotation.x=sl;r.R.shin.rotation.x=sr;
+  r.AL.sh.rotation.x=al;r.AR.sh.rotation.x=ar;
+  r.AL.fo.rotation.x=-elbow;r.AR.fo.rotation.x=-elbow;
+  var dip=0.05*move*(1+run)*(1-c)*(1-ak);
+  r.hips.position.y=lerp(0.8,0.488,c)-dip+0.03*Math.abs(Math.sin(p))*move*(1-c)*(1-ak)+hop;
+  r.hips.position.z=-0.3*c;
+  r.upper.rotation.x=0.28*run*move+0.32*spr*move+0.18*nj+0.5*c+0.08*ak;
 }
 
 /* ---------- classmates (NPC) ---------- */
@@ -1712,7 +1731,7 @@ function trackPos(s,r,out){
     for(var j=0;j<m;j++){
       var ang=j/m*Math.PI*2,px=c[0]+Math.sin(ang)*0.85,pz=c[1]+Math.cos(ang)*0.85,tries=0;
       while(blocked(px,pz,0,1.4)&&tries++<30){px=c[0]+rr(-2.5,2.5);pz=c[1]+rr(-2.5,2.5);}
-      addKid('chat',px,pz,{cx:c[0],cz:c[1],gest:rr(0,6)});
+      addKid('chat',px,pz,{cx:c[0],cz:c[1],gest:rr(0,6),hx:px,hz:pz});
     }
   });
   function wanderers(count,rect,spd,play){
@@ -1739,6 +1758,10 @@ function flyStep(k,dt){
   var f=k.fly;f.t+=dt;
   if(f.state==='air'){
     f.vy-=20*dt;
+    if(f.boom&&f.vy<=0){                 // the rocket carries on: burst further out and higher up
+      var fh=Math.hypot(f.vx,f.vz)||1;f.boom=false;
+      firework(k.x+f.vx/fh*9,k.y+7,k.z+f.vz/fh*9);SFX.boom(k.x,k.z);
+    }
     var nx=k.x+f.vx*dt,nz=k.z+f.vz*dt;
     if(blocked(nx,k.z,k.y+0.2,1.2))f.vx*=-0.3;else k.x=nx;
     if(blocked(k.x,nz,k.y+0.2,1.2))f.vz*=-0.3;else k.z=nz;
@@ -1751,8 +1774,7 @@ function flyStep(k,dt){
   }else{
     if(f.t>0.7){
       k.fly=null;k.rig.hips.rotation.x=0;k.thought='剛剛好好玩喔!';k.thoughtT=4;k.wait=rr(0.5,1.5);k.tx=k.x;k.tz=k.z;k.noKick=1.2;
-      if(k.kind==='jog'){var best=0,bd=1e9,s,tp={x:0,z:0};for(s=0;s<JOG_L(k.lane);s+=3){trackPos(s,k.lane,tp);var dd=(tp.x-k.x)*(tp.x-k.x)+(tp.z-k.z)*(tp.z-k.z);if(dd<bd){bd=dd;best=s;}}k.s=best;}
-      if(k.kind==='chat'){k.cx=k.x+Math.sin(k.h)*0.8;k.cz=k.z+Math.cos(k.h)*0.8;}
+      startReturn(k);
     }
   }
 }
@@ -1786,10 +1808,13 @@ function kidStep(k,dt,tx,tz,spd){
     else{k.sp=0;return 'stuck';}
   }
   k.x=nx;k.z=nz;k.sp=spd;
+  if(k.y>0)k.y=groundAt(k.x,k.z,k.y);
   return false;
 }
 function poseKid(k,dt){
   if(k.fly){poseFly(k);return;}
+  if(onSeat(k)){poseSeated(k,dt);return;}
+  if(k.follow){poseFollower(k,dt);return;}
   var r=k.rig,sp=k.sp,run=clamp((sp-1.8)/3,0,1);
   k.run+=(run-k.run)*Math.min(1,dt*8);
   var stride=lerp(1.5,2.6,k.run);
@@ -1836,9 +1861,15 @@ function updateKids(dt){
     k=kids[i];k.t+=dt;
     if(k.noKick>0)k.noKick-=dt;
     if(k.fly){flyStep(k,dt);continue;}
+    if(onSeat(k)){seatSync(k);continue;}
     var pdx=P0.x-k.x,pdz=P0.z-k.z,pd2=pdx*pdx+pdz*pdz;
     var near=pd2<9&&Math.abs(P0.y-k.y)<1.5;
     if(k===chatKid){k.sp=0;kidTurn(k,Math.atan2(pdx,pdz),dt);}
+    else if(k.follow)followStep(k,followers.indexOf(k),dt);
+    else if(k.back){
+      var rb=kidStep(k,dt,k.back.x,k.back.z,Math.max(k.spd,2.6));k.back.t+=dt;
+      if(rb===true||(k.back.t>5&&!k.vis)||k.back.t>30){if(rb!==true){k.x=k.back.x;k.z=k.back.z;k.y=0;}k.back=null;k.sp=0;}
+    }
     else if(k.kind==='jog'){
       var spd=k.spd;if(pd2<6)spd*=0.35;
       k.s+=k.dir*spd*dt;
@@ -1867,20 +1898,21 @@ function updateKids(dt){
       }
     }
     if(k.hopV!==0||k.hop>0){k.hopV-=14*dt;k.hop+=k.hopV*dt;if(k.hop<=0){k.hop=0;k.hopV=0;}}
-    if(k.waveT>0){k.waveT-=dt;k.wave=1;}else k.wave=(near&&k.kind!=='jog'&&k.kind!=='soc'&&pd2<6.25)?1:0;
+    if(k.waveT>0){k.waveT-=dt;k.wave=1;}else k.wave=(near&&!k.follow&&k.kind!=='jog'&&k.kind!=='soc'&&pd2<6.25)?1:0;
   }
   /* separation: kids vs player, kids vs kids */
   for(i=0;i<n;i++){
     k=kids[i];
     if(k.fly)continue;
     var ex=k.x-P0.x,ez=k.z-P0.z,ed=Math.hypot(ex,ez);
-    if(mode==='free'&&!chatKid&&!(k.noKick>0)&&A.speed>4.6&&ed<1.05&&Math.abs(P0.y-k.y)<1.3&&(P0.vx*ex+P0.vz*ez)>0.25*A.speed*ed){kickKid(k);continue;}
-    if(k.kind!=='jog'&&ed<0.75&&Math.abs(P0.y-k.y)<1.4){
+    if(mode==='free'&&!chatKid&&!(k.noKick>0)&&!k.follow&&A.speed>4.6&&ed<1.05&&Math.abs(P0.y-k.y)<1.3&&(P0.vx*ex+P0.vz*ez)>0.25*A.speed*ed){kickKid(k);continue;}
+    if(onSeat(k))continue;
+    if(!railed(k)&&ed<0.75&&Math.abs(P0.y-k.y)<1.4){
       var push=(0.75-ed)+0.01,ux=ed>0.001?ex/ed:1,uz=ed>0.001?ez/ed:0;
       if(!blocked(k.x+ux*push,k.z+uz*push,k.y,1.4)){k.x+=ux*push;k.z+=uz*push;}
     }
-    for(j=i+1;j<n&&k.kind!=='jog';j++){
-      var o=kids[j];if(o.kind==='jog'||o.fly)continue;
+    for(j=i+1;j<n&&!railed(k);j++){
+      var o=kids[j];if(railed(o)||o.fly||onSeat(o))continue;
       var ox=k.x-o.x,oz=k.z-o.z;
       if(ox*ox+oz*oz<0.2){
         var od=Math.hypot(ox,oz)||0.01,pu=(0.45-od)*0.5;
@@ -1896,6 +1928,200 @@ function updateKids(dt){
     var cdx=k.x-camPos.x,cdz=k.z-camPos.z,vis=(cdx*cdx+cdz*cdz)<85*85;
     if(vis!==k.vis){k.vis=vis;k.rig.root.visible=vis;}
     if(vis)poseKid(k,dt);
+  }
+}
+
+/* ---------- followers: classmates who tag along and copy what the player does ---------- */
+var MAXF=5,FGAP=1.3,followers=[];
+var trail=[],trailS=0,jumpPts=[];      // breadcrumbs of the player's path, and where they jumped
+function onSeat(k){return !!(k.seat&&k.seat.on);}
+function railed(k){return k.kind==='jog'&&!k.follow&&!k.back;}
+function trailHead(){var p=trail[trail.length-1];return p?trailS+Math.hypot(P0.x-p.x,P0.z-p.z):0;}
+function recordTrail(){
+  var p=trail[trail.length-1];
+  if(!p){trail.push({x:P0.x,z:P0.z,s:0,cr:P0.crouch});return;}
+  var d=Math.hypot(P0.x-p.x,P0.z-p.z);
+  if(d>=0.3){trailS+=d;trail.push({x:P0.x,z:P0.z,s:trailS,cr:P0.crouch});if(trail.length>500)trail.shift();}
+  while(jumpPts.length&&jumpPts[0].s<trailS-60)jumpPts.shift();
+}
+var tgtOut={x:0,z:0,cr:false};
+function trailAt(s){
+  var n=trail.length,i;
+  if(!n){tgtOut.x=P0.x;tgtOut.z=P0.z;tgtOut.cr=false;return tgtOut;}
+  var last=trail[n-1];
+  if(s>=last.s){                         // between the newest breadcrumb and the player
+    var d=Math.hypot(P0.x-last.x,P0.z-last.z),u=d>1e-6?clamp((s-last.s)/d,0,1):1;
+    tgtOut.x=last.x+(P0.x-last.x)*u;tgtOut.z=last.z+(P0.z-last.z)*u;tgtOut.cr=last.cr;return tgtOut;
+  }
+  for(i=n-1;i>0;i--)if(trail[i-1].s<=s)break;
+  if(i===0){tgtOut.x=trail[0].x;tgtOut.z=trail[0].z;tgtOut.cr=trail[0].cr;return tgtOut;}
+  var a=trail[i-1],b=trail[i],f=(s-a.s)/Math.max(1e-6,b.s-a.s);
+  tgtOut.x=a.x+(b.x-a.x)*f;tgtOut.z=a.z+(b.z-a.z)*f;tgtOut.cr=a.cr||b.cr;return tgtOut;
+}
+function onPlayerJump(){
+  if(!followers.length)return;
+  if(A.speed<1.5){for(var i=0;i<followers.length;i++)followers[i].jumpT=0.14*(i+1);}   // jump in place: a ripple down the line
+  else jumpPts.push({s:trailHead(),x:P0.x,z:P0.z});                                       // running jump: copy it at the same spot
+}
+function updateCrew(){
+  var el=$('#crew'),n=followers.length;
+  el.hidden=n===0;
+  if(n)el.innerHTML='👫 跟班 <b>'+n+'</b>/'+MAXF+(isTouch?'':' · <kbd>X</kbd> 解散');
+  $('#bDis').hidden=n===0||mode==='coaster';
+}
+function recruit(k){
+  if(k.follow)return;
+  if(followers.length>=MAXF){chatSay('隊伍已經有 '+MAXF+' 個人了,下次再找我玩!');return;}
+  k.follow=true;k.fg=true;k.fy=0;k.fvx=0;k.fvz=0;k.ballistic=false;k.crA=0;k.airA=0;k.spr=0;k.jumpT=-1;k.flip=-1;
+  k.lastJS=trailHead();k.back=null;k.seat=null;k.sp=0;
+  var si=soc.kids.indexOf(k);
+  if(si>=0){                              // leave the football game without breaking the passing
+    var hk=soc.kids[soc.holder%soc.kids.length];
+    soc.kids.splice(si,1);soc.fly=null;soc.kickT=rr(0.6,1.4);
+    soc.holder=Math.max(0,soc.kids.indexOf(hk));ball.visible=soc.kids.length>0;
+  }
+  followers.push(k);
+  chatSay(pick(['好耶!我跟著你!你去哪我就去哪~','走吧走吧!我跟在你後面!','耶!一起玩!你做什麼我就做什麼!']));
+  k.hopV=4.2;k.waveT=1.2;SFX.cheer();updateCrew();
+  toast('「'+k.name+'」加入隊伍!('+followers.length+'/'+MAXF+')',1800);
+}
+function releaseFollower(k){
+  leaveSeat(k,false);
+  k.follow=false;k.jumpT=-1;k.flip=-1;k.crA=0;k.airA=0;k.ballistic=false;
+  var r=k.rig;r.hips.rotation.x=0;r.hips.position.z=0;r.AL.sh.scale.y=1;r.AR.sh.scale.y=1;r.AL.sh.rotation.z=0;r.root.rotation.set(0,k.h,0);
+  if(k.kind==='soc'&&soc.kids.indexOf(k)<0){soc.kids.push(k);ball.visible=true;}
+}
+function dismissAll(){
+  if(!followers.length)return;
+  if(mode==='coaster'){toast('下車之後再解散吧!',1600);return;}
+  if(chatKid)endChat();
+  var n=followers.length,base=yaw+Math.PI;   // fan out away from the camera so the show stays in view
+  followers.slice().forEach(function(k,i){
+    releaseFollower(k);
+    var a=base+(n>1?(i/(n-1)-0.5)*Math.PI*1.3:0)+rr(-0.2,0.2),hs=rr(5.5,8),vy=rr(13,16),T=2*vy/20;
+    for(var tries=0;tries<4;tries++){    // land inside the campus, not on a building
+      var lx=k.x+Math.sin(a)*hs*T,lz=k.z+Math.cos(a)*hs*T;
+      if(Math.abs(lx)<55&&lz>-42&&lz<53&&!blocked(lx,lz,0,1.4))break;
+      a+=Math.PI/2;if(tries===2)hs=1.5;
+    }
+    k.fly={vx:Math.sin(a)*hs,vz:Math.cos(a)*hs,vy:vy,state:'air',t:0,spin:(rnd()<0.5?-1:1)*rr(8,12),rot:0,
+      say:pick(['咻~~~砰!','解散囉~~~!','飛高高~!','煙火來囉!']),boom:true};
+    SFX.whistle(k.x,k.z,i*0.06);
+  });
+  followers.length=0;jumpPts.length=0;updateCrew();
+  if(mode==='free')camShow={t:3.4,p0:pitch};
+  toast('解散!大家一哄而散 🎆',2000);
+}
+/* after a flight, walk back to where this classmate was playing before */
+function startReturn(k){
+  k.back=null;
+  if(k.kind==='jog'){
+    var best=0,bd=1e9,s,tp={x:0,z:0};
+    for(s=0;s<JOG_L(k.lane);s+=3){trackPos(s,k.lane,tp);var dd=(tp.x-k.x)*(tp.x-k.x)+(tp.z-k.z)*(tp.z-k.z);if(dd<bd){bd=dd;best=s;}}
+    k.s=best;trackPos(best,k.lane,tp);k.back={x:tp.x,z:tp.z,t:0};
+  }else if(k.kind==='chat'&&k.hx!==undefined)k.back={x:k.hx,z:k.hz,t:0};
+  if(k.back&&Math.hypot(k.back.x-k.x,k.back.z-k.z)<0.4)k.back=null;
+}
+function followStep(k,i,dt){
+  var tg=(k.seat&&k.seat.go)?k.seat.go:trailAt(trailHead()-(i+1)*FGAP);
+  var tx=tg.x,tz=tg.z,cr=!k.seat&&tg.cr,dx=tx-k.x,dz=tz-k.z,d=Math.hypot(dx,dz);
+  if(d>35&&!k.vis){k.x=tx;k.z=tz;k.y=groundAt(tx,tz,P0.y+0.5);k.fg=true;k.fy=0;k.ballistic=false;dx=dz=d=0;}
+  var lead=(mode==='free'&&!k.seat)?A.speed*0.85:0;
+  var want=d<0.12?0:Math.min(17,d*3+lead);
+  if(k.ballistic){                       // flung off a swing or bar: no steering until landing
+    var bx=k.x+k.fvx*dt,bz=k.z+k.fvz*dt;
+    if(!blocked(bx,k.z,k.y,1.4))k.x=bx;else k.fvx=0;
+    if(!blocked(k.x,bz,k.y,1.4))k.z=bz;else k.fvz=0;
+    k.sp=Math.hypot(k.fvx,k.fvz);
+  }else{
+    k.sp+=(want-k.sp)*Math.min(1,dt*(k.fg?10:3));
+    if(d>0.02&&k.sp>0.01){
+      var ux=dx/d,uz=dz/d,step=Math.min(d,k.sp*dt),ns=Math.max(1,Math.ceil(step/0.3)),ss=step/ns;
+      for(var q=0;q<ns;q++){
+        var nx=k.x+ux*ss,nz=k.z+uz*ss;
+        if(!blocked(nx,k.z,k.y,1.4))k.x=nx;
+        if(!blocked(k.x,nz,k.y,1.4))k.z=nz;
+      }
+      if(k.sp>0.4)kidTurn(k,Math.atan2(ux,uz),dt);
+    }
+    if(k.sp<0.4||d<0.15)kidTurn(k,P0.heading,dt*0.6);   // idle: face the same way as the player
+  }
+  /* copy the player's jumps */
+  if(k.jumpT>0){k.jumpT-=dt;if(k.jumpT<=0&&k.fg){k.fy=JUMP_V;k.fg=false;}}
+  var sT=trailHead()-(i+1)*FGAP;
+  for(var j=0;j<jumpPts.length;j++){
+    var jp=jumpPts[j];if(jp.s<=k.lastJS)continue;
+    if(jp.s>sT+0.6||k.seat)break;
+    var jd=Math.hypot(jp.x-k.x,jp.z-k.z);
+    if(jd<1.0){if(k.fg){k.fy=JUMP_V;k.fg=false;k.lastJS=jp.s;}}
+    else if(jd>4)k.lastJS=jp.s;
+    break;
+  }
+  /* gravity, steps and ceilings, same rules as the player */
+  if(k.fg){
+    var gh=groundAt(k.x,k.z,k.y);
+    if(gh>=k.y-0.02)k.y=Math.max(k.y,gh);else{k.fg=false;k.fy=0;}
+  }
+  if(!k.fg){
+    k.fy-=GRAV*dt;
+    var ny=k.y+k.fy*dt,gh2=groundAt(k.x,k.z,k.y);
+    if(k.fy>0){var ce=ceilingAt(k.x,k.z,k.y,1.4);if(ny+1.4>ce){ny=ce-1.4;k.fy=0;}}
+    if(k.fy<=0&&ny<=gh2){k.y=gh2;k.fy=0;k.fg=true;k.ballistic=false;}else k.y=ny;
+  }
+  var crT=cr||(mode==='free'&&P0.crouch&&A.speed<0.6&&!k.seat);
+  k.crA+=((crT?1:0)-k.crA)*Math.min(1,dt*10);
+}
+function poseFollower(k,dt){
+  var r=k.rig,sp=k.sp;
+  k.run+=(clamp((sp-WALK)/(RUN-WALK),0,1)-k.run)*Math.min(1,dt*8);
+  k.spr+=(clamp((sp-RUN)/(GEARS[GEARS.length-1]-RUN),0,1)-k.spr)*Math.min(1,dt*6);
+  k.airA+=((k.fg?0:1)-k.airA)*Math.min(1,dt*12);
+  if(k.fg)k.ph+=sp/(lerp(1.6,2.8,k.run)+2.1*k.spr)*Math.PI*2*dt;
+  if(k.flip>0){if(k.fg&&k.flip>0.2)k.flip=-1;else{k.flip+=dt/0.75;if(k.flip>=1)k.flip=-1;}}
+  walkPose(r,k.ph,sp,k.run,k.spr,k.crA,k.airA,k.flip,k.hop);
+  r.AL.sh.rotation.z=0;r.AR.sh.rotation.z=0;r.AL.sh.scale.y=1;r.AR.sh.scale.y=1;
+  if(k.wave>0&&sp<0.5){r.AR.sh.rotation.x=-2.6;r.AR.sh.rotation.z=0.35+0.3*Math.sin(k.t*11);r.AR.fo.rotation.x=-0.2;}
+  r.root.position.set(k.x,k.y,k.z);r.root.rotation.set(0,k.h,0);
+}
+/* equipment seats (swing / bar / coaster) are filled in by the copy-the-player code */
+function leaveSeat(k,jump){if(k.seat)k.seat=null;}
+function seatSync(k){}
+function poseSeated(k,dt){}
+
+/* ---------- fireworks ---------- */
+var fireworks=[],FW_COLS=[0xff3b30,0xffb300,0x1e88ff,0x2ecc40,0xff2fb3,0x9b5cff];
+var fwTex=(function(){
+  var c=document.createElement('canvas');c.width=c.height=64;var g=c.getContext('2d'),gr=g.createRadialGradient(32,32,0,32,32,32);
+  gr.addColorStop(0,'rgba(255,255,255,1)');gr.addColorStop(0.35,'rgba(255,255,255,.85)');gr.addColorStop(1,'rgba(255,255,255,0)');
+  g.fillStyle=gr;g.fillRect(0,0,64,64);return new THREE.CanvasTexture(c);
+})();
+function firework(x,y,z){
+  var n=110,pos=new Float32Array(n*3),col=new Float32Array(n*3),vel=new Float32Array(n*3),c1=new THREE.Color(),c2=new THREE.Color();
+  c1.setHex(pick(FW_COLS));c2.setHex(pick(FW_COLS));
+  for(var i=0;i<n;i++){
+    var u=Math.random()*2-1,a=Math.random()*Math.PI*2,r=Math.sqrt(1-u*u),v=6+Math.random()*2.5,cc=i%3?c1:c2;
+    vel[i*3]=r*Math.cos(a)*v;vel[i*3+1]=u*v;vel[i*3+2]=r*Math.sin(a)*v;
+    pos[i*3]=x;pos[i*3+1]=y;pos[i*3+2]=z;
+    col[i*3]=cc.r;col[i*3+1]=cc.g;col[i*3+2]=cc.b;
+  }
+  var g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(pos,3));g.setAttribute('color',new THREE.BufferAttribute(col,3));
+  var m=new THREE.PointsMaterial({size:1.1,map:fwTex,vertexColors:true,transparent:true,depthWrite:false,fog:false});
+  var pts=new THREE.Points(g,m);pts.frustumCulled=false;scene.add(pts);
+  fireworks.push({p:pts,v:vel,t:0});
+}
+function updateFireworks(dt){
+  for(var j=fireworks.length-1;j>=0;j--){
+    var f=fireworks[j],a=f.p.geometry.attributes.position,arr=a.array,v=f.v,drag=Math.exp(-dt*1.6);
+    f.t+=dt;
+    for(var i=0;i<arr.length;i+=3){
+      v[i]*=drag;v[i+1]=v[i+1]*drag-4*dt;v[i+2]*=drag;
+      arr[i]+=v[i]*dt;arr[i+1]+=v[i+1]*dt;arr[i+2]+=v[i+2]*dt;
+    }
+    a.needsUpdate=true;
+    f.p.material.opacity=f.t<0.9?1:Math.max(0,1-(f.t-0.9)/0.9);
+    f.p.material.size=1.1*(0.75+0.5*Math.random());
+    if(f.t>1.8){scene.remove(f.p);f.p.geometry.dispose();f.p.material.dispose();fireworks.splice(j,1);}
   }
 }
 
@@ -2238,10 +2464,13 @@ var TH={
   wander:['下一節是體育課耶!','好想去玩鞦韆','聽說操場有雲霄飛車!','今天的營養午餐是什麼?','我想去單槓玩','光明國小最棒了'],
   play:['我要玩到打鐘!','來比賽誰跳得高!','這裡最好玩了!'],
   near:['咦?是新同學嗎?','哈囉~要不要一起玩?','他看起來好有精神','要跟我打招呼嗎?'],
-  coaster:['哇!雲霄飛車衝好快!','好想坐坐看!','上面的人在尖叫耶','那個坐的人是誰啊?']
+  coaster:['哇!雲霄飛車衝好快!','好想坐坐看!','上面的人在尖叫耶','那個坐的人是誰啊?'],
+  follow:['跟緊跟緊!','我們要去哪裡?','你做什麼我就做什麼!','排好隊喔~','跟著你好好玩!'],
+  fast:['等等我~跑太快了啦!','哇啊~快追不上了!','好快好快!衝啊!']
 };
 function pickThought(k){
   var pd=Math.hypot(P0.x-k.x,P0.z-k.z);
+  if(k.follow)return (A.speed>11&&mode==='free'&&rnd()<0.7)?pick(TH.fast):pick(TH.follow);
   if(mode==='coaster'&&train.state==='ride'&&rnd()<0.6)return pick(TH.coaster);
   if(costume!==0&&pd<7&&rnd()<0.5)return pick(['哇!他的衣服好酷!','那是「'+COSTUME_NAMES[costume]+'」嗎?我也想穿!']);
   if(pd<4&&rnd()<0.4)return pick(TH.near);
@@ -2293,28 +2522,30 @@ function chatSay(t){chatLine=t;$('#chatSaid').textContent=t;}
 function chatChoose(n){
   var k=chatKid;if(!k)return;
   SFX.blip();
-  if(n===1)chatSay(DOING[(k.kind==='wander'&&k.play)?'play':k.kind]);
+  if(n===1)chatSay(k.follow?'我在跟著你呀!你做什麼我就做什麼!':DOING[(k.kind==='wander'&&k.play)?'play':k.kind]);
   else if(n===2)chatSay('我在想:「'+k.thought+'」');
   else if(n===3)chatSay(pick(SCHOOL));
-  else if(n===4){chatSay('好耶!擊掌!✋ 我們一起玩!');k.hopV=4.2;k.wave=1;k.waveT=1.5;SFX.cheer();}
+  else if(n===4){if(k.follow){endChat();dismissAll();}else{recruit(k);buildChatOpts(k);}}
   else endChat();
 }
 function buildChatUI(name,say){
   var el=$('#chat');el.hidden=false;
   $('#chatWho').textContent=name;$('#chatSaid').textContent=say;
-  var o=$('#chatOpts');
-  if(!o.firstChild){
-    ['你在做什麼?','你在想什麼?','聊聊學校','一起玩吧!','再見'].forEach(function(t,i){
-      var b=document.createElement('button');b.type='button';b.className='co ctl';b.innerHTML='<i>'+(i+1)+'</i>'+t;
-      b.addEventListener('pointerdown',function(e){e.preventDefault();e.stopPropagation();chatChoose(i+1);});
-      o.appendChild(b);
-    });
-  }
+  buildChatOpts(chatKid);
   actKey='';setAct(null,null);
+}
+function buildChatOpts(k){
+  var o=$('#chatOpts');o.textContent='';
+  ['你在做什麼?','你在想什麼?','聊聊學校',k&&k.follow?'解散!🎆':'一起玩吧!','再見'].forEach(function(t,i){
+    var b=document.createElement('button');b.type='button';b.className='co ctl';b.innerHTML='<i>'+(i+1)+'</i>'+t;
+    b.addEventListener('pointerdown',function(e){e.preventDefault();e.stopPropagation();chatChoose(i+1);});
+    o.appendChild(b);
+  });
 }
 function endChat(){chatKid=null;chatLine='';$('#chat').hidden=true;}
 
 /* ---------- camera ---------- */
+var camShow=null;
 var camPos=new THREE.Vector3(),camLook=new THREE.Vector3(),wanted=new THREE.Vector3(),look=new THREE.Vector3(),tgt=new THREE.Vector3();
 function camClip(t,dir,d){
   for(var s=0.6;s<=d;s+=0.25){
@@ -2349,6 +2580,11 @@ function updateCamera(dt){
       camUp.lerp(cU,Math.min(1,dt*6));k=1;
     }
   }else{
+    if(camShow){                          // after a dismissal: dip the camera so the fireworks are in the sky above
+      camShow.t-=dt;
+      pitch+=((camShow.t>0.9?-0.06:camShow.p0)-pitch)*Math.min(1,dt*3);
+      if(camShow.t<=0||mode!=='free')camShow=null;
+    }
     tgt.set(P0.x,P0.y+lerp(1.4,0.95,A.crouch),P0.z);
     var cp=Math.cos(pitch);tmpDir.set(Math.sin(yaw)*cp,Math.sin(pitch),Math.cos(yaw)*cp);
     var d=camClip(tgt,tmpDir,camDist);
@@ -2434,7 +2670,7 @@ function drawMap(){
   for(var ci=0;ci<CT.N;ci+=5){if(ci===0)mg.moveTo(mx(CT.PX[ci]),mz(CT.PZ[ci]));else mg.lineTo(mx(CT.PX[ci]),mz(CT.PZ[ci]));}
   mg.closePath();mg.stroke();
   mg.fillStyle='#ffffff';mg.strokeStyle='#2f6fb5';mg.lineWidth=1.2;
-  for(var ki=0;ki<kids.length;ki++){mg.beginPath();mg.arc(mx(kids[ki].x),mz(kids[ki].z),2.4,0,Math.PI*2);mg.fill();mg.stroke();}
+  for(var ki=0;ki<kids.length;ki++){mg.fillStyle=kids[ki].follow?'#ffc21a':'#ffffff';mg.beginPath();mg.arc(mx(kids[ki].x),mz(kids[ki].z),kids[ki].follow?3:2.4,0,Math.PI*2);mg.fill();mg.stroke();}
   var px=mx(P0.x),pz=mz(P0.z),hx=Math.sin(P0.heading),hz=Math.cos(P0.heading);
   mg.save();mg.translate(px,pz);mg.rotate(Math.atan2(hx,-hz));
   mg.fillStyle='#e8523f';mg.strokeStyle='#fff';mg.lineWidth=2;
@@ -2462,6 +2698,7 @@ window.addEventListener('keydown',function(e){
   if(e.code==='KeyC'&&!e.repeat&&(mode==='swing'||mode==='bar'))dismount();
   if(e.code==='KeyV'&&!e.repeat&&mode==='coaster')train.view^=1;
   if(e.code==='KeyM'&&!e.repeat)toggleSound();
+  if(e.code==='KeyX'&&!e.repeat&&followers.length)dismissAll();
   if(e.code.indexOf('Arrow')===0)e.preventDefault();
 });
 function setSndBtn(){var b=$('#snd'),o=SFX.isOn();b.textContent=o?'🔊 音效開':'🔇 音效關';b.setAttribute('aria-pressed',o?'true':'false');}
@@ -2480,6 +2717,7 @@ stage.addEventListener('pointerdown',function(e){
 });
 stage.addEventListener('pointermove',function(e){
   if(!drag||e.pointerId!==drag.id)return;
+  camShow=null;
   yaw-=(e.clientX-drag.x)*0.0055;
   pitch=clamp(pitch+(e.clientY-drag.y)*0.004,-0.12,1.25);
   drag.x=e.clientX;drag.y=e.clientY;
@@ -2523,9 +2761,10 @@ bCrouch.addEventListener('pointerdown',function(e){
 });
 var DBG=location.hash==="#debug";
 buildMoveBar();
-if(location.hash==='#debug')window.__g={nextCostume:nextCostume,startChat:startChat,chatChoose:chatChoose,get chatKid(){return chatKid;},CT:CT,train:train,mountCoaster:mountCoaster,kids:kids,soc:soc,P0:P0,bars:bars,mount:mount,startMove:startMove,get mode(){return mode;},get mv(){return mv;},char:char,doneMoves:doneMoves,SFX:SFX,swings:swings,A:A,dismount:dismount,actionPress:actionPress,get gear(){return gear;}};
+if(location.hash==='#debug')window.__g={nextCostume:nextCostume,startChat:startChat,chatChoose:chatChoose,get chatKid(){return chatKid;},CT:CT,train:train,mountCoaster:mountCoaster,kids:kids,soc:soc,P0:P0,bars:bars,mount:mount,startMove:startMove,get mode(){return mode;},get mv(){return mv;},char:char,doneMoves:doneMoves,SFX:SFX,swings:swings,A:A,dismount:dismount,actionPress:actionPress,get gear(){return gear;},followers:followers,recruit:recruit,dismissAll:dismissAll,trail:trail,combo:combo};
 if(DBG)window.__setYaw=function(v){yaw=v;};
 $('#bAct').addEventListener('pointerdown',function(e){e.preventDefault();actionPress();});
+$('#bDis').addEventListener('pointerdown',function(e){e.preventDefault();e.stopPropagation();dismissAll();});
 
 /* ---------- start / resize / loop ---------- */
 function resize(){
@@ -2560,7 +2799,7 @@ function frame(now){
     var m=pops[j];m.scale.addScalar(dt*9);m.material.opacity-=dt*1.8;
     if(m.material.opacity<=0){scene.remove(m);m.geometry.dispose();m.material.dispose();pops.splice(j,1);}
   }
-  dust.update(dt);
+  dust.update(dt);updateFireworks(dt);
   clouds.forEach(function(c){c.position.x+=dt*1.2;if(c.position.x>260)c.position.x=-260;});
   ledUpdate(tAll);
   if(mode!==bodyMode){bodyMode=mode;document.body.classList.toggle('busy',mode!=='free');}
