@@ -43,6 +43,9 @@ body{
 .stars .s{color:var(--cap-deep);font-size:17px}
 .stars b{font-size:18px}
 #zone{font-weight:700;color:var(--ink-soft);transition:opacity .25s}
+.col.right{align-items:flex-end}
+#snd{font:700 12px var(--font);color:var(--ink);cursor:pointer;padding:5px 10px}
+#snd[aria-pressed="false"]{color:var(--ink-soft)}
 #map{
   width:150px;height:125px;border-radius:14px;border:2px solid #fff;
   box-shadow:0 2px 10px rgba(18,48,74,.25);background:#dbe8cf;display:block;
@@ -170,7 +173,10 @@ body.touch .only-kb{display:none}
       <div class="chip stars"><span class="s">★</span><b id="sc">0</b><span>/ <span id="st">10</span> 顆光明星</span></div>
       <div class="chip" id="zone">校門口</div>
     </div>
-    <canvas id="map" width="240" height="200" aria-label="校園小地圖"></canvas>
+    <div class="col right">
+      <canvas id="map" width="240" height="200" aria-label="校園小地圖"></canvas>
+      <button id="snd" class="chip ctl" type="button" aria-pressed="true">🔊 音效開</button>
+    </div>
   </div>
   <div class="bottom">
     <div class="keys chip">
@@ -178,7 +184,7 @@ body.touch .only-kb{display:none}
       <kbd>Shift</kbd> 跑步 ·
       <kbd>空白</kbd> 跳 ·
       <kbd>C</kbd> 蹲下 ·
-      <kbd>F</kbd> 互動 · <kbd>⌘</kbd>/<kbd>Win</kbd> 換裝<br>拖曳滑鼠或 <kbd>Q</kbd><kbd>E</kbd> 轉視角
+      <kbd>F</kbd> 互動 · <kbd>⌘</kbd>/<kbd>Win</kbd> 換裝 · <kbd>M</kbd> 音效<br>拖曳滑鼠或 <kbd>Q</kbd><kbd>E</kbd> 轉視角
     </div>
   </div>
   <div class="chip actchip" id="act" hidden></div>
@@ -890,6 +896,111 @@ function popAt(x,y,z){
   m.position.set(x,y,z);m.rotation.x=-Math.PI/2;scene.add(m);pops.push(m);
 }
 
+/* ---------- sound effects (synthesised with Web Audio, no sound files) ---------- */
+var SFX=(function(){
+  var AC=window.AudioContext||window.webkitAudioContext,ctx=null,out=null,nb=null,on=true,wind=null;
+  try{on=localStorage.getItem('gm-sound')!=='off';}catch(e){}
+  function init(){
+    if(!AC)return;
+    if(!ctx){
+      try{ctx=new AC();}catch(e){ctx=null;return;}
+      var comp=ctx.createDynamicsCompressor();comp.connect(ctx.destination);
+      out=ctx.createGain();out.gain.value=on?0.75:0;out.connect(comp);
+      var len=ctx.sampleRate,d;nb=ctx.createBuffer(1,len,ctx.sampleRate);d=nb.getChannelData(0);
+      for(var i=0;i<len;i++)d[i]=Math.random()*2-1;
+      var ws=ctx.createBufferSource();ws.buffer=nb;ws.loop=true;
+      var wf=ctx.createBiquadFilter();wf.type='bandpass';wf.frequency.value=500;wf.Q.value=0.6;
+      var wg=ctx.createGain();wg.gain.value=0;
+      ws.connect(wf);wf.connect(wg);wg.connect(out);ws.start();
+      wind={f:wf,g:wg,lv:0};
+    }
+    if(ctx.state==='suspended')ctx.resume();
+  }
+  function ok(){return ctx&&on&&ctx.state==='running';}
+  function env(g,t,a,peak,dec){g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(Math.max(peak,0.0002),t+a);g.gain.exponentialRampToValueAtTime(0.0001,t+a+dec);}
+  /* o: at (delay s), dur, type, f, f1 (end freq), q, vol, a (attack) */
+  function noise(o){
+    var t=ctx.currentTime+(o.at||0),a=o.a||0.004,s=ctx.createBufferSource();s.buffer=nb;s.loop=true;
+    var f=ctx.createBiquadFilter();f.type=o.type||'lowpass';f.frequency.setValueAtTime(o.f,t);
+    if(o.f1)f.frequency.exponentialRampToValueAtTime(o.f1,t+a+o.dur);f.Q.value=o.q||0.7;
+    var g=ctx.createGain();env(g,t,a,o.vol,o.dur);
+    s.connect(f);f.connect(g);g.connect(out);s.start(t,Math.random()*0.5);s.stop(t+a+o.dur+0.05);
+  }
+  function tone(o){
+    var t=ctx.currentTime+(o.at||0),a=o.a||0.005,os=ctx.createOscillator();os.type=o.type||'sine';
+    os.frequency.setValueAtTime(o.f,t);if(o.f1)os.frequency.exponentialRampToValueAtTime(o.f1,t+a+o.dur);
+    var g=ctx.createGain();env(g,t,a,o.vol,o.dur);
+    if(o.vib){var lf=ctx.createOscillator(),lg=ctx.createGain();lf.frequency.value=o.vib;lg.gain.value=o.f*0.06;lf.connect(lg);lg.connect(os.frequency);lf.start(t);lf.stop(t+a+o.dur+0.05);}
+    os.connect(g);g.connect(out);os.start(t);os.stop(t+a+o.dur+0.05);
+  }
+  function jit(f){return f*(0.9+Math.random()*0.2);}
+  function near(x,z){if(x===undefined)return 1;var d=Math.hypot(x-P0.x,z-P0.z);return clamp(1.15-d/45,0,1);}
+  var S={
+    init:init,
+    isOn:function(){return on;},
+    toggle:function(){
+      on=!on;init();
+      if(out)out.gain.setTargetAtTime(on?0.75:0,ctx.currentTime,0.03);
+      try{localStorage.setItem('gm-sound',on?'on':'off');}catch(e){}
+      return on;
+    },
+    pause:function(p){if(!ctx)return;if(p)ctx.suspend();else ctx.resume();},
+    wind:function(lv){
+      if(!ctx||!wind)return;lv=clamp(lv,0,1);
+      if(Math.abs(lv-wind.lv)<0.02)return;wind.lv=lv;
+      wind.g.gain.setTargetAtTime(lv*0.32,ctx.currentTime,0.15);
+      wind.f.frequency.setTargetAtTime(380+lv*1500,ctx.currentTime,0.2);
+    },
+    step:function(surf,hard){
+      if(!ok())return;var v=0.07+0.13*hard;
+      if(surf==='grass')noise({type:'bandpass',f:jit(1700),q:0.8,dur:0.07,vol:v*0.9});
+      else if(surf==='sand'){noise({type:'bandpass',f:jit(3200),q:1.3,dur:0.09,vol:v});noise({type:'lowpass',f:500,dur:0.05,vol:v*0.6});}
+      else if(surf==='track'){noise({type:'lowpass',f:jit(750),dur:0.05,vol:v*1.1});tone({f:jit(120),f1:70,dur:0.06,vol:v*0.8});}
+      else{noise({type:'bandpass',f:jit(1300),q:1.1,dur:0.045,vol:v});tone({f:jit(160),f1:90,dur:0.04,vol:v*0.5});}
+    },
+    jump:function(){if(!ok())return;tone({f:300,f1:620,dur:0.13,vol:0.09});noise({type:'highpass',f:2500,dur:0.08,vol:0.04});},
+    land:function(p){if(!ok())return;p=clamp(p,0.2,1);noise({type:'lowpass',f:420,dur:0.1,vol:0.2*p});tone({f:95,f1:50,dur:0.08,vol:0.18*p});},
+    gear:function(n){if(!ok())return;tone({type:'triangle',f:440*Math.pow(1.19,n),dur:0.09,vol:0.07});noise({type:'bandpass',f:800+n*300,f1:2400,q:0.8,dur:0.25,vol:0.06});},
+    bump:function(p,x,z){
+      if(!ok())return;var v=near(x,z)*clamp(p,0.6,1.4);
+      tone({type:'square',f:240,f1:75,dur:0.14,vol:0.1*v});
+      noise({type:'lowpass',f:1600,dur:0.12,vol:0.28*v});
+      tone({type:'triangle',f:420,f1:140,dur:0.42,vol:0.13*v,vib:22,at:0.03});
+      tone({f:520,f1:1700,dur:0.5,vol:0.06*v,at:0.12});
+    },
+    plop:function(x,z){
+      var v=near(x,z);if(!ok()||v<=0)return;
+      noise({type:'lowpass',f:380,dur:0.12,vol:0.18*v});
+      [1568,1319,1568].forEach(function(f,i){tone({type:'triangle',f:f,dur:0.1,vol:0.04*v,at:0.15+i*0.12});});
+    },
+    star:function(){if(!ok())return;[1047,1319,1568,2093].forEach(function(f,i){tone({type:'triangle',f:f,dur:0.28,vol:0.1,at:i*0.07});});noise({type:'highpass',f:6000,dur:0.4,vol:0.03,at:0.2});},
+    fanfare:function(){if(!ok())return;[523,659,784,1047,784,1047].forEach(function(f,i){tone({type:'square',f:f,dur:i===5?0.6:0.14,vol:0.05,at:i*0.13});tone({type:'triangle',f:f/2,dur:0.2,vol:0.06,at:i*0.13});});},
+    whoosh:function(p){if(!ok())return;p=clamp(p,0.15,1);noise({type:'bandpass',f:500,f1:1300,q:0.9,dur:0.32,vol:0.16*p,a:0.08});},
+    clink:function(){if(!ok())return;tone({f:1760,dur:0.3,vol:0.06});tone({f:2637,dur:0.2,vol:0.035});},
+    blip:function(hi){if(!ok())return;tone({f:hi?880:620,f1:hi?1320:930,dur:0.07,vol:0.07});},
+    sparkle:function(){if(!ok())return;for(var i=0;i<6;i++)tone({type:'triangle',f:1500+Math.random()*1800,dur:0.12,vol:0.045,at:i*0.045});},
+    cheer:function(){if(!ok())return;[784,988,1175,1568].forEach(function(f,i){tone({type:'square',f:f,dur:0.1,vol:0.04,at:i*0.09});});},
+    clack:function(){if(!ok())return;noise({type:'bandpass',f:2200,q:2,dur:0.02,vol:0.12});tone({type:'square',f:380,dur:0.025,vol:0.03});},
+    hiss:function(){if(!ok())return;noise({type:'highpass',f:3500,dur:1.1,vol:0.07,a:0.05});},
+    whistle:function(x,z,at){var v=near(x,z);if(!ok()||v<=0)return;tone({f:700,f1:2600,dur:0.75,vol:0.05*v,at:at||0});noise({type:'highpass',f:4500,dur:0.7,vol:0.025*v,at:at||0});},
+    boom:function(x,z){
+      var v=near(x,z)*0.8+0.2;if(!ok())return;
+      noise({type:'lowpass',f:1400,f1:120,dur:1.5,vol:0.5*v,a:0.002});
+      tone({f:85,f1:32,dur:0.7,vol:0.38*v,a:0.002});
+      for(var i=0;i<16;i++)noise({type:'highpass',f:2500+Math.random()*3000,dur:0.012+Math.random()*0.02,vol:(0.05+Math.random()*0.07)*v,at:0.25+Math.random()*1.0});
+    }
+  };
+  return S;
+})();
+document.addEventListener('visibilitychange',function(){SFX.pause(document.hidden);});
+function surfaceAt(x,z,y){
+  if(y>0.15)return 'hard';
+  if(x>-54&&x<-33&&z>39.5&&z<54.5)return 'sand';
+  if(inStadium(x,z,18))return (Math.abs(x)<=24&&Math.abs(z-TRK.cz)<=17)?'grass':'sand';
+  if(inStadium(x,z,26))return 'track';
+  return 'hard';
+}
+
 /* ---------- player character ---------- */
 var char=(function(){
   var root=new THREE.Group();
@@ -1057,7 +1168,7 @@ function update(dt){
   P0.x=clamp(P0.x,-BX,BX);P0.z=clamp(P0.z,-BZ,BZ);
 
   jumpBuf-=dt;
-  if(jumpBuf>0&&P0.onGround&&!P0.crouch){P0.vy=JUMP_V;P0.onGround=false;jumpBuf=0;}
+  if(jumpBuf>0&&P0.onGround&&!P0.crouch){P0.vy=JUMP_V;P0.onGround=false;jumpBuf=0;SFX.jump();}
 
   var gh=groundAt(P0.x,P0.z,P0.y);
   if(P0.onGround){
@@ -1068,7 +1179,7 @@ function update(dt){
     P0.vy-=GRAV*dt;
     var ny=P0.y+P0.vy*dt;
     if(P0.vy>0){var c=ceilingAt(P0.x,P0.z,P0.y,h);if(ny+h>c){ny=c-h;P0.vy=0;}}
-    if(P0.vy<=0&&ny<=gh){P0.y=gh;P0.vy=0;P0.onGround=true;}
+    if(P0.vy<=0&&ny<=gh){if(P0.vy<-3)SFX.land(-P0.vy/14);P0.y=gh;P0.vy=0;P0.onGround=true;}
     else P0.y=ny;
   }
 
@@ -1082,8 +1193,8 @@ function update(dt){
       s.got=true;s.g.visible=false;collected++;
       $('#sc').textContent=collected;
       popAt(s.x,s.y,s.z);
-      if(collected===STARS.length)toast('10 顆光明星全部找到了!下一階段會加入任務。',4200);
-      else toast('找到「'+s.n+'」的光明星('+collected+'/'+STARS.length+')',2400);
+      if(collected===STARS.length){toast('10 顆光明星全部找到了!下一階段會加入任務。',4200);SFX.fanfare();}
+      else{toast('找到「'+s.n+'」的光明星('+collected+'/'+STARS.length+')',2400);SFX.star();}
     }
   });
 }
@@ -1135,7 +1246,7 @@ function startMove(id){
   if(mode!=='bar'||mv||pullT>=0||state!=='play')return;
   if(id===0){pullT=0;return;}
   mv={id:id,t:0};
-  toast(MOVES[id].n,1200);
+  toast(MOVES[id].n,1200);SFX.whoosh(0.6);
 }
 function findNear(){
   var best=null,bd=1e9,i,d;
@@ -1181,7 +1292,7 @@ function mount(kind,obj){
     char.root.position.set(clamp(P0.x,obj.x0+0.5,obj.x1-0.5)-obj.cx,-1.92,0);
   }
   actKey='';setAct(modeText(),kind==='swing'?'跳下':'放開');
-  toast(kind==='swing'?'坐上鞦韆了':'抓住單槓了',1400);
+  toast(kind==='swing'?'坐上鞦韆了':'抓住單槓了',1400);if(kind==='bar')SFX.clink();else SFX.blip();
 }
 function dismount(){
   if(mode==='free')return;
@@ -1210,6 +1321,7 @@ function updateModes(dt){
   for(i=0;i<swings.length;i++){
     var s=swings[i],occ=(mode==='swing'&&cur===s);
     s.pend.step(dt,occ&&pumpIn,1.25,occ?0.1:0.5,3.6);
+    if(occ&&s.pend.th*s.pivot.rotation.x<0&&Math.abs(s.pend.w)>1.1)SFX.whoosh(Math.abs(s.pend.w)/3.2);
     s.pivot.rotation.x=s.pend.th;
   }
   if(state!=='play')return;
@@ -1234,7 +1346,7 @@ function updateModes(dt){
       if(mv.id===9&&mu>=0.58){
         cur.pivot.updateMatrixWorld(true);
         markDone(9);mv=null;
-        dismount();P0.vz=Math.max(P0.vz,4.2);P0.vy=Math.max(P0.vy,4.6);P0.vx=0;flipP=0.0001;
+        dismount();P0.vz=Math.max(P0.vz,4.2);P0.vy=Math.max(P0.vy,4.6);P0.vx=0;flipP=0.0001;SFX.whoosh(1);
         return;
       }
       if(mv.t>=md.d){
@@ -1328,6 +1440,8 @@ function pose(dt){
   A.crouch+=((P0.crouch?1:0)-A.crouch)*Math.min(1,dt*10);
   var stride=lerp(1.7,3.0,A.run);
   if(P0.onGround)A.phase+=sp/stride*Math.PI*2*dt;
+  var stepN=Math.floor(A.phase/Math.PI);
+  if(stepN!==A.stepN){A.stepN=stepN;if(P0.onGround&&sp>0.6)SFX.step(surfaceAt(P0.x,P0.z,P0.y),clamp((sp-WALK)/8,0,1)*(P0.crouch?0.3:1));}
   var p=A.phase,move=Math.min(1,sp/1.2),c=A.crouch,ak=A.air;
   var amp=lerp(0.5,0.95,A.run)*move*(1-0.65*c);
   var kAmp=lerp(0.6,1.6,A.run)*move*(1-0.5*c);
@@ -1415,7 +1529,7 @@ function randomKid(sport){
     hair:hair,cap:(rnd()<0.55?'#ffc21a':null),bag:(sport?null:pick(['#2f6fb5','#d8524a','#3a8f5b','#8a5fb5','#e69a2e'])),s:rr(0.84,1.0)
   });
 }
-function nextCostume(){costume=(costume+1)%COSTUME_NAMES.length;char.applyCostume(costume);toast('換裝:'+COSTUME_NAMES[costume]+' ✨',1600);}
+function nextCostume(){costume=(costume+1)%COSTUME_NAMES.length;char.applyCostume(costume);toast('換裝:'+COSTUME_NAMES[costume]+' ✨',1600);SFX.sparkle();}
 var kids=[],kidCap=isTouch?26:46;
 var ball=new THREE.Mesh(new THREE.SphereGeometry(0.14,12,8),std('#ffffff'));ball.castShadow=true;ball.visible=false;scene.add(ball);
 var soc={kids:[],holder:0,fly:null,kickT:2};
@@ -1482,7 +1596,7 @@ function kickKid(k){
   var sp=Math.hypot(P0.vx,P0.vz)||1,dx=P0.vx/sp,dz=P0.vz/sp,pw=9+A.speed*0.9;
   k.fly={vx:dx*pw,vz:dz*pw,vy:7.2,state:'air',t:0,spin:(rnd()<0.5?-1:1)*rr(9,13),rot:0,say:pick(['哇啊啊啊~','咻~~~飛起來了!','哎呀呀呀!'])};
   if(chatKid===k)endChat();
-  popAt(k.x,k.y+0.9,k.z);toast('撞飛了「'+k.name+'」!',1200);
+  popAt(k.x,k.y+0.9,k.z);toast('撞飛了「'+k.name+'」!',1200);SFX.bump(A.speed/9,k.x,k.z);
 }
 function flyStep(k,dt){
   var f=k.fly;f.t+=dt;
@@ -1494,7 +1608,7 @@ function flyStep(k,dt){
     k.x=clamp(k.x,-BX,BX);k.z=clamp(k.z,-BZ,BZ);
     k.y+=f.vy*dt;f.rot+=f.spin*dt;
     var gh=groundAt(k.x,k.z,k.y);
-    if(f.vy<0&&k.y<=gh){k.y=gh;f.state='down';f.t=0;f.rot=0;f.say='好暈…⭐';popAt(k.x,k.y+0.2,k.z);}
+    if(f.vy<0&&k.y<=gh){k.y=gh;f.state='down';f.t=0;f.rot=0;f.say='好暈…⭐';popAt(k.x,k.y+0.2,k.z);SFX.plop(k.x,k.z);}
   }else if(f.state==='down'){
     if(f.t>1.7){f.state='up';f.t=0;f.say='再來一次!哈哈哈';}
   }else{
@@ -1913,6 +2027,7 @@ function placeTrain(){
   }
 }
 placeTrain();
+var LIFT_END=((CT.iTop-CT.iStop+CT.N)%CT.N)*CT.ds,BRAKE_AT=((CT.iBrake-CT.iStop+CT.N)%CT.N)*CT.ds+60;
 function vAt(s){var N=CT.N,f=s/CT.ds;f=((f%N)+N)%N;var i=Math.floor(f),t=f-i;return CT.V[i]+(CT.V[(i+1)%N]-CT.V[i])*t;}
 function mountCoaster(){
   mode='coaster';cur=null;near=null;
@@ -1936,7 +2051,10 @@ function updateCoaster(dt){
   var tr=train;
   if(tr.state==='launch'||tr.state==='ride'){
     var v=vAt(tr.dist+CT.iStop*CT.ds);
+    var d0=tr.dist;
     tr.v=v;tr.dist+=v*dt;tr.state=tr.dist>8?'ride':'launch';
+    if(tr.dist<LIFT_END&&Math.floor(tr.dist/1.2)!==Math.floor(d0/1.2))SFX.clack();
+    if(d0<BRAKE_AT&&tr.dist>=BRAKE_AT)SFX.hiss();
     if(tr.dist>=CT.total-0.15){tr.dist=CT.total;tr.state='dwell';tr.dwell=0;tr.v=0;toast('到站了!按 F 下車',3000);}
   }else if(tr.state==='dwell'){
     tr.dwell+=dt;if(tr.dwell>9){dismountCoaster();return;}
@@ -2032,15 +2150,16 @@ var DOING={jog:'我在跑操場!老師說每天跑三圈身體才會好。',soc:
 function startChat(k){
   chatKid=k;P0.heading=Math.atan2(k.x-P0.x,k.z-P0.z);
   var gr=costume!==0?'哇!你今天穿「'+COSTUME_NAMES[costume]+'」,好酷!':pick(['嗨!你是新同學嗎?','哈囉~我是'+k.name+'!','你好啊!']);
-  chatLine=gr;buildChatUI(k.name,gr);
+  chatLine=gr;buildChatUI(k.name,gr);SFX.blip(true);
 }
 function chatSay(t){chatLine=t;$('#chatSaid').textContent=t;}
 function chatChoose(n){
   var k=chatKid;if(!k)return;
+  SFX.blip();
   if(n===1)chatSay(DOING[(k.kind==='wander'&&k.play)?'play':k.kind]);
   else if(n===2)chatSay('我在想:「'+k.thought+'」');
   else if(n===3)chatSay(pick(SCHOOL));
-  else if(n===4){chatSay('好耶!擊掌!✋ 我們一起玩!');k.hopV=4.2;k.wave=1;k.waveT=1.5;}
+  else if(n===4){chatSay('好耶!擊掌!✋ 我們一起玩!');k.hopV=4.2;k.wave=1;k.waveT=1.5;SFX.cheer();}
   else endChat();
 }
 function buildChatUI(name,say){
@@ -2107,6 +2226,7 @@ function updateCamera(dt){
   }
   if(Math.abs(camera.fov-wantFov)>0.05){camera.fov+=(wantFov-camera.fov)*Math.min(1,dt*4);camera.updateProjectionMatrix();}
   speedfx.style.opacity=(mode==='coaster')?clamp((train.v-14)/14,0,0.8):0;
+  SFX.wind(state!=='play'?0:mode==='coaster'?(train.state==='dwell'?0:(train.v-5)/26):mode==='swing'?Math.abs(cur.pend.w)/9:(A.speed-7.5)/9);
   camera.position.copy(camPos);camera.lookAt(camLook);
   sky.position.copy(camera.position);
   var fx=Math.round(P0.x),fz=Math.round(P0.z);
@@ -2187,6 +2307,7 @@ function drawMap(){
 /* ---------- input ---------- */
 window.addEventListener('keydown',function(e){
   if(state!=='play')return;
+  SFX.init();
   keys[e.code]=true;
   if(!e.repeat&&(e.key==='Meta'||e.code==='MetaLeft'||e.code==='MetaRight'||e.code==='OSLeft'||e.code==='OSRight'||e.code==='KeyK')){keys={};nextCostume();e.preventDefault();return;}
   if(chatKid){var cm=/^(Digit|Numpad)([1-5])$/.exec(e.code);if(cm){chatChoose(+cm[2]);return;}if(e.code==='Escape'){endChat();return;}}
@@ -2198,8 +2319,14 @@ window.addEventListener('keydown',function(e){
   if(e.code==='KeyF'&&!e.repeat)actionPress();
   if(e.code==='KeyC'&&!e.repeat&&(mode==='swing'||mode==='bar'))dismount();
   if(e.code==='KeyV'&&!e.repeat&&mode==='coaster')train.view^=1;
+  if(e.code==='KeyM'&&!e.repeat)toggleSound();
   if(e.code.indexOf('Arrow')===0)e.preventDefault();
 });
+function setSndBtn(){var b=$('#snd'),o=SFX.isOn();b.textContent=o?'🔊 音效開':'🔇 音效關';b.setAttribute('aria-pressed',o?'true':'false');}
+function toggleSound(){SFX.toggle();setSndBtn();toast(SFX.isOn()?'音效開啟 🔊':'音效關閉 🔇',1200);}
+$('#snd').addEventListener('pointerdown',function(e){e.preventDefault();e.stopPropagation();toggleSound();});
+setSndBtn();
+window.addEventListener('pointerdown',function(){if(state==='play')SFX.init();},true);
 window.addEventListener('keyup',function(e){keys[e.code]=false;if(e.code==='Space')jumpHeld=false;});
 window.addEventListener('blur',function(){keys={};});
 
@@ -2254,7 +2381,7 @@ bCrouch.addEventListener('pointerdown',function(e){
 });
 var DBG=location.hash==="#debug";
 buildMoveBar();
-if(location.hash==='#debug')window.__g={nextCostume:nextCostume,startChat:startChat,chatChoose:chatChoose,get chatKid(){return chatKid;},CT:CT,train:train,mountCoaster:mountCoaster,kids:kids,soc:soc,P0:P0,bars:bars,mount:mount,startMove:startMove,get mode(){return mode;},get mv(){return mv;},char:char,doneMoves:doneMoves};
+if(location.hash==='#debug')window.__g={nextCostume:nextCostume,startChat:startChat,chatChoose:chatChoose,get chatKid(){return chatKid;},CT:CT,train:train,mountCoaster:mountCoaster,kids:kids,soc:soc,P0:P0,bars:bars,mount:mount,startMove:startMove,get mode(){return mode;},get mv(){return mv;},char:char,doneMoves:doneMoves,SFX:SFX,swings:swings,A:A,dismount:dismount,actionPress:actionPress};
 $('#bAct').addEventListener('pointerdown',function(e){e.preventDefault();actionPress();});
 
 /* ---------- start / resize / loop ---------- */
@@ -2266,7 +2393,7 @@ function resize(){
 window.addEventListener('resize',resize);resize();
 
 function startGame(){
-  state='play';
+  state='play';SFX.init();
   introEl.hidden=true;$('#hud').hidden=false;
   yaw=Math.PI/2;pitch=0.38;
   toast('從大門走進校園,找找看第一顆光明星',3200);
