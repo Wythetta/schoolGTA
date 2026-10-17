@@ -44,6 +44,12 @@ body{
 .stars b{font-size:18px}
 #zone{font-weight:700;color:var(--ink-soft);transition:opacity .25s}
 .col.right{align-items:flex-end}
+.gear{font-weight:700;white-space:nowrap}
+.gear b{font-weight:900;margin-right:6px}
+.gear.max b{color:#e8523f}
+.pips i{display:inline-block;width:11px;height:11px;border-radius:3px;background:rgba(18,48,74,.15);margin-left:3px;vertical-align:-1px}
+.pips i.on{background:var(--cap-deep)}
+.gear.max .pips i.on{background:#e8523f}
 #snd{font:700 12px var(--font);color:var(--ink);cursor:pointer;padding:5px 10px}
 #snd[aria-pressed="false"]{color:var(--ink-soft)}
 #map{
@@ -172,6 +178,7 @@ body.touch .only-kb{display:none}
       <div class="chip brand"><i></i>光明國小探險</div>
       <div class="chip stars"><span class="s">★</span><b id="sc">0</b><span>/ <span id="st">10</span> 顆光明星</span></div>
       <div class="chip" id="zone">校門口</div>
+      <div class="chip gear" id="gear" hidden><b id="gearN">跑步</b><span class="pips"><i></i><i></i><i></i><i></i></span></div>
     </div>
     <div class="col right">
       <canvas id="map" width="240" height="200" aria-label="校園小地圖"></canvas>
@@ -181,7 +188,7 @@ body.touch .only-kb{display:none}
   <div class="bottom">
     <div class="keys chip">
       <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 走路 ·
-      <kbd>Shift</kbd> 跑步 ·
+      <kbd>Shift</kbd> 跑步(按住加速) ·
       <kbd>空白</kbd> 跳 ·
       <kbd>C</kbd> 蹲下 ·
       <kbd>F</kbd> 互動 · <kbd>⌘</kbd>/<kbd>Win</kbd> 換裝 · <kbd>M</kbd> 音效<br>拖曳滑鼠或 <kbd>Q</kbd><kbd>E</kbd> 轉視角
@@ -208,7 +215,7 @@ body.touch .only-kb{display:none}
     <p>從大門走進校園,找出 10 顆藏起來的光明星。校園裡有 40 多位同學在跑步、踢球、聊天;操場西邊還有超長高速雲霄飛車,走到月台按 F 搭乘!</p>
     <dl class="how only-kb">
       <dt>走路</dt><dd><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 或方向鍵上下</dd>
-      <dt>跑步</dt><dd>移動時按住 <kbd>Shift</kbd></dd>
+      <dt>跑步</dt><dd>移動時按住 <kbd>Shift</kbd>,按越久越快:跑步→快跑→衝刺→極速</dd>
       <dt>跳躍</dt><dd><kbd>空白鍵</kbd></dd>
       <dt>蹲下</dt><dd>按住 <kbd>C</kbd> 或 <kbd>Ctrl</kbd></dd>
       <dt>視角</dt><dd>拖曳滑鼠、<kbd>Q</kbd><kbd>E</kbd>,滾輪調遠近</dd>
@@ -216,7 +223,7 @@ body.touch .only-kb{display:none}
     </dl>
     <dl class="how only-touch">
       <dt>走路</dt><dd>左下搖桿輕推</dd>
-      <dt>跑步</dt><dd>搖桿推到底</dd>
+      <dt>跑步</dt><dd>搖桿推到底,推越久越快(共 4 段)</dd>
       <dt>跳躍</dt><dd>右下「跳躍」按鈕</dd>
       <dt>蹲下</dt><dd>「蹲下」按鈕,再按一次站起</dd>
       <dt>視角</dt><dd>在畫面空白處拖曳</dd>
@@ -242,7 +249,8 @@ try{isTouch=window.matchMedia('(pointer:coarse)').matches;}catch(e){}
 if(isTouch)document.body.classList.add('touch');
 
 /* ---------- constants ---------- */
-var WALK=3.0,RUN=6.4,CROUCH_SPEED=1.7,GRAV=22,JUMP_V=7.8;
+var WALK=3.0,RUN=7.0,CROUCH_SPEED=1.7,GRAV=22,JUMP_V=7.8;
+var GEARS=[WALK,RUN,9.5,12.0,15.0],GEAR_N=['走路','跑步','快跑','衝刺','極速'];   // hold run to shift up
 var R=0.35,STEP=0.45,STAND_H=1.75,CROUCH_H=1.35;
 var BX=84,BZ=76;
 var GX=58,GZ=-24;                 // main gate: east fence, north part of the campus, faces east
@@ -891,6 +899,24 @@ STARS.forEach(function(s,i){
   scene.add(s.g);
 });
 var pops=[];
+var dust=(function(){
+  var g=new THREE.SphereGeometry(0.22,8,6),pool=[],n=0;
+  for(var i=0;i<16;i++){
+    var m=new THREE.Mesh(g,new THREE.MeshBasicMaterial({color:0xd8cbb2,transparent:true,opacity:0,depthWrite:false}));
+    m.visible=false;scene.add(m);pool.push({m:m,t:1,s:1});
+  }
+  return {
+    puff:function(x,y,z,s){var p=pool[n++%pool.length];p.t=0;p.s=s||1;p.m.position.set(x,y+0.15,z);p.m.visible=true;},
+    update:function(dt){
+      for(var i=0;i<pool.length;i++){
+        var p=pool[i];if(p.t>=1)continue;
+        p.t=Math.min(1,p.t+dt/0.55);
+        p.m.scale.setScalar(p.s*(0.6+1.8*p.t));p.m.position.y+=dt*0.5;p.m.material.opacity=0.45*(1-p.t);
+        if(p.t>=1)p.m.visible=false;
+      }
+    }
+  };
+})();
 function popAt(x,y,z){
   var m=new THREE.Mesh(new THREE.RingGeometry(0.3,0.42,28),new THREE.MeshBasicMaterial({color:0xffd24a,transparent:true,opacity:.9,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false}));
   m.position.set(x,y,z);m.rotation.x=-Math.PI/2;scene.add(m);pops.push(m);
@@ -1072,7 +1098,8 @@ var char=(function(){
 
 /* ---------- state ---------- */
 var P0={x:GX+4.5,y:0,z:GZ,vx:0,vz:0,vy:0,onGround:true,crouch:false,heading:-Math.PI/2};
-var A={phase:0,run:0,air:0,crouch:0,speed:0,ext:0};
+var A={phase:0,run:0,air:0,crouch:0,speed:0,ext:0,sprint:0,stepN:0};
+var gear=0,gearT=0,gearLow=0;
 var yaw=Math.PI/2,pitch=0.38,camDist=7.5;
 var state='intro',introA=0.6;
 var keys={},jumpBuf=0,touchCrouch=false;
@@ -1126,6 +1153,28 @@ function canStand(x,z,feet){
   return true;
 }
 
+/* ---------- run gears ---------- */
+function showGear(){
+  var el=$('#gear');
+  if(gear<1||mode!=='free'){el.hidden=true;return;}
+  el.hidden=false;$('#gearN').textContent=GEAR_N[gear];
+  el.classList.toggle('max',gear===GEARS.length-1);
+  var ps=el.querySelectorAll('.pips i');
+  for(var i=0;i<ps.length;i++)ps[i].classList.toggle('on',i<gear);
+}
+function updateGear(dt,run,dx,dz){
+  var g0=gear,sp=Math.hypot(P0.vx,P0.vz);
+  if(!run){if(P0.onGround){gear=0;gearT=0;}}           // keep the gear through a jump
+  else{
+    if(gear===0)gear=1;
+    if(P0.onGround&&sp>2&&gear>1&&(P0.vx*dx+P0.vz*dz)/sp<0.35){gear--;gearT=0;}   // sharp turn costs a gear
+    if(gear>1&&sp<GEARS[gear]*0.45){gearLow+=dt;if(gearLow>0.35){gear--;gearLow=0;gearT=0;}}   // ran into something
+    else gearLow=0;
+    if(gear<GEARS.length-1&&P0.onGround&&sp>GEARS[gear]*0.85){gearT+=dt;if(gearT>1.1){gear++;gearT=0;}}
+  }
+  if(gear!==g0){if(gear>g0&&gear>=2){SFX.gear(gear);if(gear===GEARS.length-1)toast('極速模式!💨',1000);}showGear();}
+}
+
 /* ---------- update ---------- */
 var tmpDir=new THREE.Vector3();
 function update(dt){
@@ -1148,23 +1197,28 @@ function update(dt){
   var target=0;
   if(mag>0&&dl>0){
     dx/=dl;dz/=dl;
-    var run=keys.ShiftLeft||keys.ShiftRight;
+    var run=kb?!!(keys.ShiftLeft||keys.ShiftRight):mag>0.92;
+    updateGear(dt,run&&!P0.crouch,dx,dz);
     if(P0.crouch)target=CROUCH_SPEED*Math.min(1,mag);
-    else if(kb)target=run?RUN:WALK;
-    else target=mag<0.6?lerp(0,WALK,mag/0.6):lerp(WALK,RUN,(mag-0.6)/0.4);
+    else if(gear>0)target=GEARS[gear];
+    else if(kb)target=WALK;
+    else target=mag<0.6?lerp(0,WALK,mag/0.6):lerp(WALK,RUN,(mag-0.6)/0.32);
     var th=Math.atan2(dx,dz),df=th-P0.heading;
     while(df>Math.PI)df-=Math.PI*2;while(df<-Math.PI)df+=Math.PI*2;
     P0.heading+=df*Math.min(1,dt*12);
-  }
+  }else updateGear(dt,false,0,0);
   var acc=P0.onGround?12:(mag>0?4:0.4);
   P0.vx+=(dx*target-P0.vx)*Math.min(1,acc*dt);
   P0.vz+=(dz*target-P0.vz)*Math.min(1,acc*dt);
   if((mag===0||dl===0)&&P0.onGround){P0.vx*=Math.max(0,1-dt*10);P0.vz*=Math.max(0,1-dt*10);}
 
-  var nx=P0.x+P0.vx*dt;
-  if(!blocked(nx,P0.z,P0.y,h))P0.x=nx;else P0.vx=0;
-  var nz=P0.z+P0.vz*dt;
-  if(!blocked(P0.x,nz,P0.y,h))P0.z=nz;else P0.vz=0;
+  var nsub=Math.max(1,Math.ceil(Math.hypot(P0.vx,P0.vz)*dt/0.3)),sdt=dt/nsub;   // sub-steps so fast sprints can't tunnel
+  for(var si=0;si<nsub;si++){
+    var nx=P0.x+P0.vx*sdt;
+    if(!blocked(nx,P0.z,P0.y,h))P0.x=nx;else P0.vx=0;
+    var nz=P0.z+P0.vz*sdt;
+    if(!blocked(P0.x,nz,P0.y,h))P0.z=nz;else P0.vz=0;
+  }
   P0.x=clamp(P0.x,-BX,BX);P0.z=clamp(P0.z,-BZ,BZ);
 
   jumpBuf-=dt;
@@ -1279,7 +1333,7 @@ function findNear(){
   else setAct(null,null);
 }
 function mount(kind,obj){
-  mode=kind;cur=obj;near=null;
+  mode=kind;cur=obj;near=null;gear=0;showGear();
   P0.vx=0;P0.vz=0;P0.vy=0;P0.crouch=false;touchCrouch=false;$('#bCrouch').classList.remove('on');
   pullT=-1;pullCount=0;jumpBuf=0;modePrevOK=false;P0.heading=0;mv=null;flipP=-1;
   $('#moves').hidden=(kind!=='bar');
@@ -1436,15 +1490,22 @@ function pose(dt){
   var sp=A.speed;
   var tr=clamp((sp-WALK)/(RUN-WALK),0,1);
   A.run+=(tr-A.run)*Math.min(1,dt*8);
+  A.sprint+=(clamp((sp-RUN)/(GEARS[GEARS.length-1]-RUN),0,1)-A.sprint)*Math.min(1,dt*6);
   A.air+=((P0.onGround?0:1)-A.air)*Math.min(1,dt*12);
   A.crouch+=((P0.crouch?1:0)-A.crouch)*Math.min(1,dt*10);
-  var stride=lerp(1.7,3.0,A.run);
+  var stride=lerp(1.7,3.0,A.run)+2.3*A.sprint;
   if(P0.onGround)A.phase+=sp/stride*Math.PI*2*dt;
   var stepN=Math.floor(A.phase/Math.PI);
-  if(stepN!==A.stepN){A.stepN=stepN;if(P0.onGround&&sp>0.6)SFX.step(surfaceAt(P0.x,P0.z,P0.y),clamp((sp-WALK)/8,0,1)*(P0.crouch?0.3:1));}
+  if(stepN!==A.stepN){
+    A.stepN=stepN;
+    if(P0.onGround&&sp>0.6){
+      SFX.step(surfaceAt(P0.x,P0.z,P0.y),clamp((sp-WALK)/8,0,1)*(P0.crouch?0.3:1));
+      if(sp>8.5)dust.puff(P0.x-P0.vx*0.03,P0.y,P0.z-P0.vz*0.03,0.6+A.sprint*0.6);
+    }
+  }
   var p=A.phase,move=Math.min(1,sp/1.2),c=A.crouch,ak=A.air;
-  var amp=lerp(0.5,0.95,A.run)*move*(1-0.65*c);
-  var kAmp=lerp(0.6,1.6,A.run)*move*(1-0.5*c);
+  var amp=lerp(0.5,0.95,A.run)*move*(1-0.65*c)*(1+0.25*A.sprint);
+  var kAmp=(lerp(0.6,1.6,A.run)+0.5*A.sprint)*move*(1-0.5*c);
   var tl=-Math.sin(p)*amp,trr=Math.sin(p)*amp;
   var sl=Math.max(0,Math.cos(p))*kAmp,sr=Math.max(0,-Math.cos(p))*kAmp;
   var al=Math.sin(p)*amp*1.05,ar=-Math.sin(p)*amp*1.05;
@@ -1453,6 +1514,8 @@ function pose(dt){
   sl=lerp(sl,1.1,ak);sr=lerp(sr,0.7,ak);
   al=lerp(al,-2.3,ak);ar=lerp(ar,-2.0,ak);
   var elbow=(0.25+0.9*A.run)*move+0.25*ak+0.15;
+  var nj=clamp((sp-12.5)/2,0,1)*(1-ak)*(1-c);            // top gear: arms swept back
+  al=lerp(al,1.25,nj);ar=lerp(ar,1.25,nj);elbow=lerp(elbow,0.05,nj);
   if(flipP>0){
     if(P0.onGround&&flipP>0.2)flipP=-1;else{flipP+=dt/0.75;if(flipP>=1)flipP=-1;}
   }
@@ -1468,7 +1531,7 @@ function pose(dt){
   var dip=0.05*move*(1+A.run)*(1-c)*(1-ak);
   char.hips.position.y=lerp(0.8,0.488,c)-dip+0.03*Math.abs(Math.sin(p))*move*(1-c)*(1-ak);
   char.hips.position.z=-0.3*c;
-  char.upper.rotation.x=0.28*A.run*move+0.5*c+0.08*ak;
+  char.upper.rotation.x=0.28*A.run*move+0.32*A.sprint*move+0.18*nj+0.5*c+0.08*ak;
   char.root.position.set(P0.x,P0.y,P0.z);
   char.root.rotation.y=P0.heading;
 }
@@ -1593,8 +1656,8 @@ function trackPos(s,r,out){
   if(kids.length>kidCap)kids.length=kidCap;
 })();
 function kickKid(k){
-  var sp=Math.hypot(P0.vx,P0.vz)||1,dx=P0.vx/sp,dz=P0.vz/sp,pw=9+A.speed*0.9;
-  k.fly={vx:dx*pw,vz:dz*pw,vy:7.2,state:'air',t:0,spin:(rnd()<0.5?-1:1)*rr(9,13),rot:0,say:pick(['哇啊啊啊~','咻~~~飛起來了!','哎呀呀呀!'])};
+  var sp=Math.hypot(P0.vx,P0.vz)||1,dx=P0.vx/sp,dz=P0.vz/sp,pw=Math.min(18,9+A.speed*0.9);
+  k.fly={vx:dx*pw,vz:dz*pw,vy:7.2+Math.max(0,A.speed-6.4)*0.45,state:'air',t:0,spin:(rnd()<0.5?-1:1)*rr(9,13),rot:0,say:pick(['哇啊啊啊~','咻~~~飛起來了!','哎呀呀呀!'])};
   if(chatKid===k)endChat();
   popAt(k.x,k.y+0.9,k.z);toast('撞飛了「'+k.name+'」!',1200);SFX.bump(A.speed/9,k.x,k.z);
 }
@@ -2030,7 +2093,7 @@ placeTrain();
 var LIFT_END=((CT.iTop-CT.iStop+CT.N)%CT.N)*CT.ds,BRAKE_AT=((CT.iBrake-CT.iStop+CT.N)%CT.N)*CT.ds+60;
 function vAt(s){var N=CT.N,f=s/CT.ds;f=((f%N)+N)%N;var i=Math.floor(f),t=f-i;return CT.V[i]+(CT.V[(i+1)%N]-CT.V[i])*t;}
 function mountCoaster(){
-  mode='coaster';cur=null;near=null;
+  mode='coaster';cur=null;near=null;gear=0;showGear();
   P0.vx=0;P0.vz=0;P0.vy=0;P0.crouch=false;touchCrouch=false;$('#bCrouch').classList.remove('on');jumpBuf=0;
   var c0=train.cars[0];c0.add(char.root);
   char.root.position.set(train.playerCar.x,0.62,0.05);char.root.rotation.set(0,0,0);
@@ -2220,12 +2283,13 @@ function updateCamera(dt){
   camPos.lerp(wanted,k);camLook.lerp(look,k);
   if(mode==='coaster'){camera.up.copy(camUp).normalize();}else camera.up.set(0,1,0);
   var wantFov=58;
+  if(mode==='free'&&state==='play')wantFov=58+clamp((A.speed-7.5)*1.5,0,13);
   if(mode==='coaster'){
     var sv=train.v;wantFov=58+clamp((sv-8)*1.7,0,40);
     if(sv>13){var am=Math.min(0.05,(sv-13)*0.003);camPos.x+=(Math.random()-0.5)*am;camPos.y+=(Math.random()-0.5)*am;camPos.z+=(Math.random()-0.5)*am;}
   }
   if(Math.abs(camera.fov-wantFov)>0.05){camera.fov+=(wantFov-camera.fov)*Math.min(1,dt*4);camera.updateProjectionMatrix();}
-  speedfx.style.opacity=(mode==='coaster')?clamp((train.v-14)/14,0,0.8):0;
+  speedfx.style.opacity=(mode==='coaster')?clamp((train.v-14)/14,0,0.8):(mode==='free'&&state==='play')?clamp((A.speed-11.5)/7,0,0.4):0;
   SFX.wind(state!=='play'?0:mode==='coaster'?(train.state==='dwell'?0:(train.v-5)/26):mode==='swing'?Math.abs(cur.pend.w)/9:(A.speed-7.5)/9);
   camera.position.copy(camPos);camera.lookAt(camLook);
   sky.position.copy(camera.position);
@@ -2381,7 +2445,8 @@ bCrouch.addEventListener('pointerdown',function(e){
 });
 var DBG=location.hash==="#debug";
 buildMoveBar();
-if(location.hash==='#debug')window.__g={nextCostume:nextCostume,startChat:startChat,chatChoose:chatChoose,get chatKid(){return chatKid;},CT:CT,train:train,mountCoaster:mountCoaster,kids:kids,soc:soc,P0:P0,bars:bars,mount:mount,startMove:startMove,get mode(){return mode;},get mv(){return mv;},char:char,doneMoves:doneMoves,SFX:SFX,swings:swings,A:A,dismount:dismount,actionPress:actionPress};
+if(location.hash==='#debug')window.__g={nextCostume:nextCostume,startChat:startChat,chatChoose:chatChoose,get chatKid(){return chatKid;},CT:CT,train:train,mountCoaster:mountCoaster,kids:kids,soc:soc,P0:P0,bars:bars,mount:mount,startMove:startMove,get mode(){return mode;},get mv(){return mv;},char:char,doneMoves:doneMoves,SFX:SFX,swings:swings,A:A,dismount:dismount,actionPress:actionPress,get gear(){return gear;}};
+if(DBG)window.__setYaw=function(v){yaw=v;};
 $('#bAct').addEventListener('pointerdown',function(e){e.preventDefault();actionPress();});
 
 /* ---------- start / resize / loop ---------- */
@@ -2417,6 +2482,7 @@ function frame(now){
     var m=pops[j];m.scale.addScalar(dt*9);m.material.opacity-=dt*1.8;
     if(m.material.opacity<=0){scene.remove(m);m.geometry.dispose();m.material.dispose();pops.splice(j,1);}
   }
+  dust.update(dt);
   clouds.forEach(function(c){c.position.x+=dt*1.2;if(c.position.x>260)c.position.x=-260;});
   ledUpdate(tAll);
   if(state==='play'){
