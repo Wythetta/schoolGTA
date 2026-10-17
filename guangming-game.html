@@ -112,6 +112,8 @@ body.touch #chat{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
 .co{position:relative;border:2px solid var(--ink);background:#f6f9fb;border-radius:10px;font:700 13px var(--font);color:var(--ink);padding:6px 10px 6px 24px;cursor:pointer;pointer-events:auto}
 .co i{position:absolute;left:7px;top:6px;font-style:normal;font-size:11px;color:#e8523f;font-weight:900}
 .co:hover{background:var(--cap)}
+.co.go{background:var(--cap);font-size:15px;padding:8px 16px 8px 28px}
+.co.go i{top:9px}
 #speedfx{position:absolute;inset:0;pointer-events:none;opacity:0;background:repeating-conic-gradient(from 0deg at 50% 50%,rgba(255,255,255,0) 0 3deg,rgba(255,255,255,.55) 3.4deg 3.8deg,rgba(255,255,255,0) 4.2deg 7deg);-webkit-mask-image:radial-gradient(circle at 50% 50%,transparent 38%,#000 95%);mask-image:radial-gradient(circle at 50% 50%,transparent 38%,#000 95%)}
 #moves{
   position:absolute;left:50%;bottom:calc(64px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
@@ -2639,11 +2641,12 @@ function startChat(k){
 function chatSay(t){chatLine=t;$('#chatSaid').textContent=t;}
 function chatChoose(n){
   var k=chatKid;if(!k)return;
+  if(chatSet==='joined'){if(n===1){SFX.blip(true);endChat();}return;}
   SFX.blip();
   if(n===1)chatSay(k.follow?'我在跟著你呀!你做什麼我就做什麼!':DOING[(k.kind==='wander'&&k.play)?'play':k.kind]);
   else if(n===2)chatSay('我在想:「'+k.thought+'」');
   else if(n===3)chatSay(pick(SCHOOL));
-  else if(n===4){if(k.follow){endChat();dismissAll();}else{recruit(k);buildChatOpts(k);}}
+  else if(n===4){if(k.follow){endChat();dismissAll();}else{recruit(k);buildChatOpts(k,k.follow?'joined':'normal');}}
   else endChat();
 }
 function buildChatUI(name,say){
@@ -2652,10 +2655,18 @@ function buildChatUI(name,say){
   buildChatOpts(chatKid);
   actKey='';setAct(null,null);
 }
-function buildChatOpts(k){
+/* set: normal | follow (talking to a follower) | joined (just said yes to 一起玩吧: only a way out) */
+var chatSet='normal';
+var CHAT_OPTS={
+  normal:['你在做什麼?','你在想什麼?','聊聊學校','一起玩吧!','再見'],
+  follow:['你在做什麼?','你在想什麼?','聊聊學校','解散!🎆','再見'],
+  joined:['走吧!出發(離開對話)']
+};
+function buildChatOpts(k,set){
+  chatSet=set||(k&&k.follow?'follow':'normal');
   var o=$('#chatOpts');o.textContent='';
-  ['你在做什麼?','你在想什麼?','聊聊學校',k&&k.follow?'解散!🎆':'一起玩吧!','再見'].forEach(function(t,i){
-    var b=document.createElement('button');b.type='button';b.className='co ctl';b.innerHTML='<i>'+(i+1)+'</i>'+t;
+  CHAT_OPTS[chatSet].forEach(function(t,i){
+    var b=document.createElement('button');b.type='button';b.className='co ctl'+(chatSet==='joined'?' go':'');b.innerHTML='<i>'+(i+1)+'</i>'+t;
     b.addEventListener('pointerdown',function(e){e.preventDefault();e.stopPropagation();chatChoose(i+1);});
     o.appendChild(b);
   });
